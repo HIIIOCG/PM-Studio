@@ -109,7 +109,7 @@ function buildLayout(projects, spaces) {
   }
   for (const item of items) if (item.phase === 'correction' && items.some((other) => other.phase === 'production' && other.project.id === item.project.id && other.lane === item.lane && overlaps(other.range, item.range) && item.indexes.every((index) => other.indexes.includes(index)))) item.attached = true;
   let top = AXIS_HEIGHT;
-  for (const row of rows) { row.overlaps = plan.overloads.some((item) => item.workspaceId === row.id); row.height = Math.max(Number.isFinite(row.capacity) ? row.capacity : 1, row.lanes.length) * (CARD_HEIGHT + CARD_GAP) - CARD_GAP + ROW_PADDING * 2; row.top = top; top += row.height; }
+  for (const row of rows) { row.overlaps = plan.overloads.some((item) => item.workspaceId === row.id); row.height = Math.max(Number.isFinite(row.usualLoad) ? row.usualLoad : Number.isFinite(row.capacity) ? row.capacity : 1, row.lanes.length) * (CARD_HEIGHT + CARD_GAP) - CARD_GAP + ROW_PADDING * 2; row.top = top; top += row.height; }
   return { rows, items, height: top };
 }
 
@@ -131,8 +131,10 @@ function renderTimeline(preserveScroll = false) {
     const label = create('div', 'workspace-label'); label.style.height = `${row.height}px`;
     label.append(create('span', 'workspace-name', '工作區'), create('strong', '', row.id));
     if (row.name && row.name !== `工作區 ${row.id}`) label.append(create('span', 'workspace-name', row.name.replace(new RegExp(`\\s+${row.id}$`), '')));
-    if (Number.isFinite(row.capacity)) label.append(create('span', 'capacity-note', `最多 ${row.capacity} ${row.unit || '角色'}`));
-    if (row.overlaps) label.append(create('span', 'overlap-note', '超出角色容量'));
+    if (Number.isFinite(row.usualLoad)) label.append(create('span', 'capacity-note', `一般負荷 ${row.usualLoad} ${row.unit || '項目'}，可彈性安排`));
+    else if (row.id === 'C') label.append(create('span', 'capacity-note', '彈性安排，容量待確認'));
+    else if (Number.isFinite(row.capacity)) label.append(create('span', 'capacity-note', `最多 ${row.capacity} ${row.unit || '項目'}`));
+    if (row.overlaps) label.append(create('span', 'overlap-note', '超過一般負荷，請確認安排'));
     labels.append(label);
     const rule = create('div', 'workspace-rule'); rule.style.top = `${row.top + row.height}px`; canvas.append(rule);
     if (!items.some((item) => item.indexes.includes(rows.indexOf(row)) && item.range.start <= endDay && item.range.end >= startDay)) { const empty = create('span', 'empty-row-label', '目前區間未排工作'); empty.style.top = `${row.top + row.height / 2 - 8}px`; canvas.append(empty); }
@@ -167,7 +169,7 @@ function renderTimeline(preserveScroll = false) {
   }
   const todayDay = dayNumber(today);
   if (todayDay >= startDay && todayDay <= endDay) { const line = create('div', 'today-line'); line.style.left = `${(todayDay - startDay) * pixelsPerDay + 1}px`; line.append(create('span', 'today-label', `今天 ${shortDate(today)}`)); canvas.append(line); }
-  $('visible-count').textContent = `${visibleCases.size} 案在目前區間${rows.some((row) => row.overlaps) ? ' · 有工作區超出角色容量' : ''}`;
+  $('visible-count').textContent = `${visibleCases.size} 案在目前區間${rows.some((row) => row.overlaps) ? ' · 有工作區超過一般負荷，請確認安排' : ''}`;
   state.renderedDayWidth = pixelsPerDay;
   $('timeline-viewport').scrollLeft = previousOffsetDays * pixelsPerDay;
   updateDateRange();
@@ -181,7 +183,7 @@ function makeCard(project, cross, width, phase = 'production', attached = false,
   card.append(create('span', 'card-heading', `${project.id} · ${phase === 'correction' ? '追加修正' : project.name || '未命名專案'}`));
   if (!attached) card.append(create('span', 'card-goal', project.requirements || project.goal || '製作項目未填'), create('span', 'card-customer', project.customer || '客戶未填'));
   const spaces = workspaces();
-  const areaText = renderIds.map((id) => { const space = spaces.find((item) => item.id === id); return Number.isFinite(space?.capacity) ? `${id}（${workspaceUnits(project, space)}角色）` : id; }).join(' ＋ ');
+  const areaText = renderIds.map((id) => { const space = spaces.find((item) => item.id === id); return `${id}（${workspaceUnits(project, space || { id })} ${space?.unit || '項目'}）`; }).join(' ＋ ');
   if (!attached) card.append(create('span', 'cross-label', splitCross ? `同案跨區 ${(project.workspaceIds ?? []).join(' ＋ ')} · 本段 ${areaText}` : `工作區 ${areaText}`));
   const bottom = create('span', 'card-bottom'); bottom.append(create('span', 'card-dates', `${dateText(start)} → ${dateText(end)}`)); if (project.status) bottom.append(create('span', 'card-status', project.status)); if (!attached) card.append(bottom);
   card.addEventListener('click', () => openProject(project)); return card;
@@ -228,22 +230,37 @@ function openProject(project) {
   if (project.originalStart || project.originalEnd) detailRow('原始起訖', `${dateText(project.originalStart)} → ${dateText(project.originalEnd)}`);
   if (project.correctionStart || project.correctionEnd) detailRow('追加修正', `${dateText(project.correctionStart)} → ${dateText(project.correctionEnd)}`);
   if (project.supplement) detailRow('排程補充', project.supplement);
-  detailRow('工作區', (project.workspaceIds ?? []).length ? project.workspaceIds.join(' ＋ ') : '尚未指定');
+  detailRow('工作區', (project.workspaceIds ?? []).length ? project.workspaceIds.map((id) => { const space = workspaces().find((item) => item.id === id); return `${id}（${workspaceUnits(project, space || { id })} ${space?.unit || '項目'}）`; }).join(' ＋ ') : '尚未指定');
   const options = $('workspace-options'); options.replaceChildren();
   for (const space of workspaces()) {
-    const label = create('label', 'workspace-option'); const input = create('input'); input.type = 'checkbox'; input.name = 'workspace'; input.value = space.id; input.checked = (project.workspaceIds ?? []).includes(space.id); label.append(input, create('span', '', space.name || `工作區 ${space.id}`));
-    if (Number.isFinite(space.capacity)) { const select = create('select', 'units-select'); select.dataset.workspace = space.id; select.setAttribute('aria-label', `工作區 ${space.id} 使用角色數`); for (let units = 1; units <= space.capacity; units++) { const option = create('option', '', `${units} 角色`); option.value = String(units); select.append(option); } select.value = String(workspaceUnits(project, space)); select.disabled = !input.checked; input.addEventListener('change', () => { select.disabled = !input.checked; }); label.append(select); }
-    options.append(label);
+    const option = create('div', 'workspace-option'); const choice = create('label', 'workspace-choice'); const input = create('input'); input.type = 'checkbox'; input.name = 'workspace'; input.value = space.id; input.dataset.workspace = space.id; input.checked = (project.workspaceIds ?? []).includes(space.id); choice.append(input, create('span', '', space.name || `工作區 ${space.id}`));
+    const unitsLabel = create('label', 'units-control'); const count = create('input', 'units-input'); count.type = 'number'; count.min = '1'; count.max = '1000'; count.step = '1'; count.required = true; count.dataset.workspaceUnits = space.id; count.setAttribute('aria-label', `工作區 ${space.id} 使用${space.unit || '項目'}數`); count.value = String(workspaceUnits(project, space)); count.disabled = !input.checked;
+    count.addEventListener('input', () => { count.setCustomValidity(''); });
+    count.addEventListener('invalid', () => { count.setCustomValidity(count.validity.rangeOverflow ? '使用數量過大，請確認安排。' : '使用數量請填入正整數。'); });
+    input.addEventListener('change', () => { count.disabled = !input.checked; count.setCustomValidity(''); });
+    unitsLabel.append(count, create('span', '', space.unit || '項目')); option.append(choice, unitsLabel); options.append(option);
   }
   $('assignment-form').hidden = state.mode === 'demo'; $('demo-dialog-note').hidden = state.mode !== 'demo'; $('assignment-error').hidden = true;
   $('project-dialog').showModal();
+}
+
+function readWorkspaceAllocations(ids) {
+  return Object.fromEntries(ids.map((id) => {
+    const input = $('workspace-options').querySelector(`input[data-workspace-units="${id}"]`);
+    const units = Number(input?.value);
+    if (!Number.isInteger(units) || units < 1) throw new Error(`工作區 ${id} 使用數量請填入正整數。`);
+    if (units > 1000) throw new Error(`工作區 ${id} 使用數量過大，請確認安排。`);
+    return [id, units];
+  }));
 }
 
 async function saveAssignment(ids) {
   const project = state.activeProject;
   if (!project || state.mode !== 'live') return;
   const assignments = Object.fromEntries(state.payload.projects.map((item) => [item.id, item.id === project.id ? ids : item.workspaceIds ?? []]));
-  const activeAllocation = Object.fromEntries(ids.map((id) => [id, Number($('workspace-options').querySelector(`select[data-workspace="${id}"]`)?.value || 1)]));
+  let activeAllocation;
+  try { activeAllocation = readWorkspaceAllocations(ids); }
+  catch (error) { $('assignment-error').textContent = error.message; $('assignment-error').hidden = false; return; }
   const allocations = Object.fromEntries(state.payload.projects.map((item) => [item.id, item.id === project.id ? activeAllocation : item.workspaceUnits ?? Object.fromEntries((item.workspaceIds ?? []).map((id) => [id, 1]))]));
   $('save-assignment').disabled = true; $('clear-assignment').disabled = true;
   try {
@@ -281,7 +298,7 @@ let resizeFrame;
 new ResizeObserver(() => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(() => { if (state.payload && Math.abs((state.renderedDayWidth || 0) - dayWidth()) > .01) renderTimeline(true); else updateDateRange(); }); }).observe($('timeline-viewport'));
 $('close-dialog').addEventListener('click', () => $('project-dialog').close());
 $('project-dialog').addEventListener('click', (event) => { if (event.target === $('project-dialog')) { const rect = $('project-dialog').getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) $('project-dialog').close(); } });
-$('assignment-form').addEventListener('submit', (event) => { event.preventDefault(); saveAssignment([...$('workspace-options').querySelectorAll('input:checked')].map((input) => input.value)); });
+$('assignment-form').addEventListener('submit', (event) => { event.preventDefault(); saveAssignment([...$('workspace-options').querySelectorAll('input[data-workspace]:checked')].map((input) => input.dataset.workspace)); });
 $('clear-assignment').addEventListener('click', () => saveAssignment([]));
 
 await load('demo');

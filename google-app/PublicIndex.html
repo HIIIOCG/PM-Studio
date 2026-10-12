@@ -237,9 +237,12 @@ h1 { margin: 0; font-size: 29px; font-weight: 700; letter-spacing: -.8px; }
 .workspace-options { display: flex; gap: 8px; flex-wrap: wrap; }
 .workspace-option { padding: 8px 11px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .workspace-option:has(input:checked) { border-color: var(--checked-border); background: var(--checked-bg); }
+.workspace-choice, .units-control { display: flex; align-items: center; gap: 6px; }
+.workspace-choice { cursor: pointer; }
 .workspace-option input { accent-color: var(--blue); }
-.units-select { margin-left: 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--accent-muted); font: inherit; font-size: 11px; padding: 3px; }
-.units-select:disabled { opacity: .45; }
+.units-control { margin-left: 4px; }
+.units-input { width: 64px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--accent-muted); font: inherit; font-size: 11px; padding: 3px; }
+.units-input:disabled { opacity: .45; }
 .assignment-note, .demo-dialog-note { font-size: 11px; color: var(--subtle); line-height: 1.7; margin: 12px 0 0; }
 .assignment-error { font-size: 12px; color: var(--warning); }
 .dialog-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 20px; }
@@ -296,7 +299,7 @@ const DAY_MS = 86400000;
 const text = value => value == null ? '' : String(value).trim();
 const has = value => text(value) !== '';
 
-const WORKSPACES = [{"id":"A","name":"3D角色模型 A","capacity":2,"unit":"角色","type":"character"},{"id":"B","name":"3D角色模型 B","capacity":2,"unit":"角色","type":"character"},{"id":"C","name":"額外模型項目","capacity":null,"unit":"項目","type":"additional-model"},{"id":"D","name":"CT 遊戲美術外包","capacity":null,"unit":"項目","type":"ct-art"}];
+const WORKSPACES = [{"id":"A","name":"3D角色模型 A","capacity":null,"usualLoad":2,"unit":"角色","type":"character"},{"id":"B","name":"3D角色模型 B","capacity":null,"usualLoad":2,"unit":"角色","type":"character"},{"id":"C","name":"角色與場景模型","capacity":null,"unit":"項目","type":"character-and-scene"},{"id":"D","name":"CT 遊戲美術外包","capacity":null,"unit":"項目","type":"ct-art"}];
 
 function parseDay(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) return null;
@@ -383,7 +386,9 @@ function planBlocks(projects, workspaces = WORKSPACES) {
   }
   const overloads = [];
   for (const workspace of workspaces) {
-    if (!Number.isInteger(workspace.capacity) || workspace.capacity < 1) continue;
+    const referenceOnly = !Number.isInteger(workspace.capacity) || workspace.capacity < 1;
+    const limit = referenceOnly ? workspace.usualLoad : workspace.capacity;
+    if (!Number.isInteger(limit) || limit < 1) continue;
     const active = blocks.filter(block => block.workspaceIds.includes(workspace.id));
     const events = new Map();
     for (const block of active) {
@@ -397,8 +402,8 @@ function planBlocks(projects, workspaces = WORKSPACES) {
       for (const block of covered) caseUnits.set(block.projectId,
         Math.max(caseUnits.get(block.projectId) || 0, block.workspaceUnits[workspace.id]));
       const used = [...caseUnits.values()].reduce((sum, units) => sum + units, 0);
-      if (used > workspace.capacity) overloads.push({ workspaceId: workspace.id, startDay: day,
-        endDay: days[i + 1] - 1, used, capacity: workspace.capacity,
+      if (used > limit) overloads.push({ workspaceId: workspace.id, startDay: day,
+        endDay: days[i + 1] - 1, used, capacity: limit, referenceOnly,
         projectIds: [...new Set(covered.map(block => block.projectId))] });
     }
   }
@@ -421,7 +426,7 @@ function validateEnvelope(value, mode) {
     if (!item || !allowed.includes(item.id) || ids.has(item.id)) throw new Error('工作區資料無效。');
     ids.add(item.id);
     return { id: item.id, name: cleanText(item.name, 80) || `工作區 ${item.id}`,
-      capacity: item.id === 'A' || item.id === 'B' ? 2 : null,
+      capacity: null, ...(item.id === 'A' || item.id === 'B' ? { usualLoad: 2 } : {}),
       unit: item.id === 'A' || item.id === 'B' ? '角色' : '項目' };
   });
   if (!workspaces.length) throw new Error('缺少工作區資料。');
@@ -437,7 +442,8 @@ function normalizePlacement(project, workspaces) {
   const units = {};
   for (const id of supplied) {
     const n = project.workspaceUnits?.[id] ?? 1;
-    if (!Number.isInteger(n) || n < 1 || n > (id === 'A' || id === 'B' ? 2 : 1000)) throw new Error('工作區使用數量無效。');
+    // Technical data bound only; actual extra work still requires confirmation.
+    if (!Number.isInteger(n) || n < 1 || n > 1000) throw new Error('工作區使用數量無效。');
     units[id] = n;
   }
   return { workspaceIds: [...supplied], workspaceUnits: units };
@@ -501,7 +507,7 @@ function buildLayout(projects, spaces) {
   }
   for (const item of items) if (item.phase === 'correction' && items.some((other) => other.phase === 'production' && other.project.id === item.project.id && other.lane === item.lane && overlaps(other.range, item.range) && item.indexes.every((index) => other.indexes.includes(index)))) item.attached = true;
   let top = AXIS_HEIGHT;
-  for (const row of rows) { row.overlaps = plan.overloads.some((item) => item.workspaceId === row.id); row.height = Math.max(Number.isFinite(row.capacity) ? row.capacity : 1, row.lanes.length) * (CARD_HEIGHT + CARD_GAP) - CARD_GAP + ROW_PADDING * 2; row.top = top; top += row.height; }
+  for (const row of rows) { row.overlaps = plan.overloads.some((item) => item.workspaceId === row.id); row.height = Math.max(Number.isFinite(row.usualLoad) ? row.usualLoad : Number.isFinite(row.capacity) ? row.capacity : 1, row.lanes.length) * (CARD_HEIGHT + CARD_GAP) - CARD_GAP + ROW_PADDING * 2; row.top = top; top += row.height; }
   return { rows, items, height: top };
 }
 
@@ -523,8 +529,10 @@ function renderTimeline(preserveScroll = false) {
     const label = create('div', 'workspace-label'); label.style.height = `${row.height}px`;
     label.append(create('span', 'workspace-name', '工作區'), create('strong', '', row.id));
     if (row.name && row.name !== `工作區 ${row.id}`) label.append(create('span', 'workspace-name', row.name.replace(new RegExp(`\\s+${row.id}$`), '')));
-    if (Number.isFinite(row.capacity)) label.append(create('span', 'capacity-note', `最多 ${row.capacity} ${row.unit || '角色'}`));
-    if (row.overlaps) label.append(create('span', 'overlap-note', '超出角色容量'));
+    if (Number.isFinite(row.usualLoad)) label.append(create('span', 'capacity-note', `一般負荷 ${row.usualLoad} ${row.unit || '項目'}，可彈性安排`));
+    else if (row.id === 'C') label.append(create('span', 'capacity-note', '彈性安排，容量待確認'));
+    else if (Number.isFinite(row.capacity)) label.append(create('span', 'capacity-note', `最多 ${row.capacity} ${row.unit || '項目'}`));
+    if (row.overlaps) label.append(create('span', 'overlap-note', '超過一般負荷，請確認安排'));
     labels.append(label);
     const rule = create('div', 'workspace-rule'); rule.style.top = `${row.top + row.height}px`; canvas.append(rule);
     if (!items.some((item) => item.indexes.includes(rows.indexOf(row)) && item.range.start <= endDay && item.range.end >= startDay)) { const empty = create('span', 'empty-row-label', '目前區間未排工作'); empty.style.top = `${row.top + row.height / 2 - 8}px`; canvas.append(empty); }
@@ -559,7 +567,7 @@ function renderTimeline(preserveScroll = false) {
   }
   const todayDay = dayNumber(today);
   if (todayDay >= startDay && todayDay <= endDay) { const line = create('div', 'today-line'); line.style.left = `${(todayDay - startDay) * pixelsPerDay + 1}px`; line.append(create('span', 'today-label', `今天 ${shortDate(today)}`)); canvas.append(line); }
-  $('visible-count').textContent = `${visibleCases.size} 案在目前區間${rows.some((row) => row.overlaps) ? ' · 有工作區超出角色容量' : ''}`;
+  $('visible-count').textContent = `${visibleCases.size} 案在目前區間${rows.some((row) => row.overlaps) ? ' · 有工作區超過一般負荷，請確認安排' : ''}`;
   state.renderedDayWidth = pixelsPerDay;
   $('timeline-viewport').scrollLeft = previousOffsetDays * pixelsPerDay;
   updateDateRange();
@@ -708,7 +716,7 @@ function makeCard(project, cross, width, phase = 'production', attached = false,
   card.append(create('span', 'card-heading', phase === 'correction' ? `${project.alias} · 追加修正` : project.alias));
   if (!attached) {
     card.append(create('span', 'card-goal', project.goal || '製作排程'));
-    const areaText = renderIds.map((id) => { const space = workspaces().find((item) => item.id === id); return Number.isFinite(space?.capacity) ? `${id}（${workspaceUnits(project, space)}角色）` : id; }).join(' ＋ ');
+    const areaText = renderIds.map((id) => { const space = workspaces().find((item) => item.id === id); return `${id}（${workspaceUnits(project, space || { id })} ${space?.unit || '項目'}）`; }).join(' ＋ ');
     card.append(create('span', 'cross-label', splitCross ? `同案跨區 ${project.workspaceIds.join(' ＋ ')} · 本段 ${areaText}` : `工作區 ${areaText}`));
     const bottom = create('span', 'card-bottom');
     bottom.append(create('span', 'card-dates', `${dateText(start)} → ${dateText(end)}`));
@@ -725,7 +733,7 @@ function openProject(project) {
   detailRow('交付目標', project.goal || '製作排程');
   detailRow('排程日期', `${dateText(project.start)} → ${dateText(project.end)}`);
   if (project.correctionStart || project.correctionEnd) detailRow('追加修正', `${dateText(project.correctionStart)} → ${dateText(project.correctionEnd)}`);
-  detailRow('工作區', project.workspaceIds.join(' ＋ ') || '待安排');
+  detailRow('工作區', project.workspaceIds.map((id) => { const space = workspaces().find((item) => item.id === id); return `${id}（${workspaceUnits(project, space || { id })} ${space?.unit || '項目'}）`; }).join(' ＋ ') || '待安排');
   $('project-dialog').showModal();
 }
 

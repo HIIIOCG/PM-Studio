@@ -78,7 +78,8 @@ export function createGooglePreviewServer({ now = new Date() } = {}) {
         for (const [id, areas] of Object.entries(layout.assignments)) {
           if (!Array.isArray(areas) || new Set(areas).size !== areas.length || areas.some((area) => !validAreas.has(area))) throw new Error('工作區無效。');
           const units = {};
-          for (const area of areas) { const value = layout.allocations[id]?.[area] ?? 1; if (!Number.isInteger(value) || value < 1 || value > (area === 'A' || area === 'B' ? 2 : 1000)) throw new Error('使用數量無效。'); units[area] = value; }
+          // Technical data bound only, matching the live arrangement contract.
+          for (const area of areas) { const value = layout.allocations[id]?.[area] ?? 1; if (!Number.isInteger(value) || value < 1 || value > 1000) throw new Error('使用數量無效。'); units[area] = value; }
           placements.set(id, { workspaceIds: [...areas], workspaceUnits: units });
         }
         projects = projects.map((project) => ({ ...project, ...(placements.get(project.id) || {}) }));

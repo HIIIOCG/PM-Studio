@@ -1,0 +1,67 @@
+name: Publish approved schedule
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Verify publishing prerequisites
+        env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+          REPOSITORY_FORK: ${{ github.event.repository.fork }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          REQUESTED_REF: ${{ github.ref }}
+        run: |
+          node --input-type=module <<'NODE'
+          const errors = [];
+          if (process.env.REPOSITORY_PRIVATE !== 'false') {
+            errors.push('Make this repository public before manually publishing its Pages site.');
+          }
+          if (process.env.REPOSITORY_FORK !== 'false') {
+            errors.push('Publish from the original repository, not a fork.');
+          }
+          if (process.env.DEFAULT_BRANCH !== 'main' || process.env.REQUESTED_REF !== 'refs/heads/main') {
+            errors.push('The default branch must be main; select main when running this workflow.');
+          }
+          for (const error of errors) console.error(`::error::${error}`);
+          if (errors.length) process.exit(1);
+          NODE
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Test website and publication boundaries
+        run: node --test google-app/tests/*.test.mjs web/tests/timeline-core.test.mjs
+      - name: Build approved public schedule
+        run: node scripts/build-public-site.mjs --snapshot public/data/schedule.json
+      - name: Upload public website
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: local/public-site
+          include-hidden-files: true
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy this repository's Pages site
+        id: deployment
+        uses: actions/deploy-pages@v5

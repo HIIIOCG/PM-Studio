@@ -20,7 +20,39 @@ test('public projects use anonymous keys and keep all four workspaces', () => {
   const payload = normalizePublicPayload(publicData());
   assert.equal(payload.projects[0].id, '專案 001');
   assert.deepEqual(payload.projects[0].workspaceIds, ['B', 'C']);
-  assert.deepEqual(payload.workspaces.map((space) => space.capacity), [2, 2, null, null]);
+  assert.deepEqual(payload.workspaces.map((space) => space.capacity), [null, null, null, null]);
+  assert.deepEqual(payload.workspaces.filter((space) => space.usualLoad).map((space) => [space.id, space.usualLoad]), [['A', 2], ['B', 2]]);
+});
+
+test('both client contracts retain confirmed extra characters and C quantities', () => {
+  const published = publicData();
+  published.projects[0].workspaceIds = ['A', 'B', 'C'];
+  published.projects[0].workspaceUnits = { A: 3, B: 4, C: 5 };
+  assert.deepEqual(normalizePublicPayload(published).projects[0].workspaceUnits, { A: 3, B: 4, C: 5 });
+  const internal = { ...createDemo(new Date('2026-10-12T04:00:00Z')), mode: 'internal', revision: 'REV-1', permissions: { canEditLayout: true } };
+  internal.projects[0].workspaceIds = ['A', 'B', 'C'];
+  internal.projects[0].workspaceUnits = { A: 3, B: 4, C: 5 };
+  assert.deepEqual(normalizeInternalPayload(internal).projects[0].workspaceUnits, { A: 3, B: 4, C: 5 });
+  // Old metadata must not silently restore a fixed two-character restriction.
+  published.workspaces = WORKSPACES.map((space) => ({ ...space, capacity: 2, usualLoad: 99 }));
+  const normalized = normalizePublicPayload(published);
+  assert.ok(normalized.workspaces.every((space) => space.capacity === null));
+  assert.equal(normalized.workspaces.find((space) => space.id === 'A').usualLoad, 2);
+});
+
+test('both client contracts reject malformed unit counts beyond the technical data bound', () => {
+  for (const area of ['A', 'B', 'C', 'D']) {
+    for (const units of [-1, 0, 1.5, 1001, '3']) {
+      const published = publicData();
+      published.projects[0].workspaceIds = [area];
+      published.projects[0].workspaceUnits = { [area]: units };
+      assert.throws(() => normalizePublicPayload(published), /數量/);
+      const internal = { ...createDemo(new Date('2026-10-12T04:00:00Z')), mode: 'internal', revision: 'REV-1', permissions: { canEditLayout: true } };
+      internal.projects[0].workspaceIds = [area];
+      internal.projects[0].workspaceUnits = { [area]: units };
+      assert.throws(() => normalizeInternalPayload(internal), /數量/);
+    }
+  }
 });
 
 test('public data rejects internal fields, wrong modes, and write permissions', () => {
@@ -83,8 +115,16 @@ test('preview uses only synthetic anonymous public data and rejects stale intern
     assert.equal((await rpc('public', { method: 'saveLayout', input: {} })).status, 403);
     assert.equal((await rpc('public', { method: 'getTimeline', input: { mode: 'internal' } })).status, 400);
     const internal = await (await rpc('internal', { method: 'getTimeline' })).json();
-    const changed = await rpc('internal', { method: 'saveLayout', input: { revision: internal.revision, assignments: { 'DEMO-001': ['A', 'C'] }, allocations: { 'DEMO-001': { A: 1, C: 1 } } } });
+    const changed = await rpc('internal', { method: 'saveLayout', input: { revision: internal.revision, assignments: { 'DEMO-001': ['A', 'B', 'C'] }, allocations: { 'DEMO-001': { A: 3, B: 4, C: 5 } } } });
     assert.equal(changed.status, 200);
+    const saved = normalizeInternalPayload(await changed.json());
+    assert.deepEqual(saved.projects[0].workspaceUnits, { A: 3, B: 4, C: 5 });
+    const reread = normalizeInternalPayload(await (await rpc('internal', { method: 'getTimeline' })).json());
+    assert.deepEqual(reread.projects[0].workspaceUnits, { A: 3, B: 4, C: 5 });
+    for (const units of [0, 1.5, 1001]) {
+      const rejected = await rpc('internal', { method: 'saveLayout', input: { revision: saved.revision, assignments: { 'DEMO-001': ['A'] }, allocations: { 'DEMO-001': { A: units } } } });
+      assert.equal(rejected.status, 400);
+    }
     assert.equal((await rpc('internal', { method: 'saveLayout', input: { revision: internal.revision, assignments: {}, allocations: {} } })).status, 409);
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });

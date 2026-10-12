@@ -3,9 +3,9 @@ const PM_PUBLIC_ = Object.freeze({
   tab: '匿名排程',
   header: ['alias', 'approvedGoal', 'scheduleStart', 'scheduleEnd', 'workspaceIds', 'workspaceUnits'],
   workspaces: [
-    { id: 'A', name: '3D角色模型 A', capacity: 2, unit: '角色', type: 'character' },
-    { id: 'B', name: '3D角色模型 B', capacity: 2, unit: '角色', type: 'character' },
-    { id: 'C', name: '額外模型項目', capacity: null, unit: '項目', type: 'additional-model' },
+    { id: 'A', name: '3D角色模型 A', capacity: null, usualLoad: 2, unit: '角色', type: 'character' },
+    { id: 'B', name: '3D角色模型 B', capacity: null, usualLoad: 2, unit: '角色', type: 'character' },
+    { id: 'C', name: '角色與場景模型', capacity: null, unit: '項目', type: 'character-and-scene' },
     { id: 'D', name: 'CT 遊戲美術外包', capacity: null, unit: '項目', type: 'ct-art' }
   ]
 });
@@ -53,11 +53,12 @@ function publicProject_(row, aliases) {
   const startDay = publicDay_(start), endDay = publicDay_(end);
   if (startDay === null || endDay === null || startDay > endDay) throw new Error('排程日期無效。');
   const ids = JSON.parse(row[4]), units = JSON.parse(row[5]);
+  // The numeric bound protects data handling; it does not declare availability.
   if (!Array.isArray(ids) || !ids.length || ids.length > 4 || new Set(ids).size !== ids.length
     || ids.some(function(id) { return !['A', 'B', 'C', 'D'].includes(id); })
     || !units || Object.prototype.toString.call(units) !== '[object Object]'
     || Object.keys(units).length !== ids.length || Object.keys(units).some(function(id) { return !ids.includes(id); })
-    || ids.some(function(id) { return !Number.isInteger(units[id]) || units[id] < 1 || units[id] > (['A', 'B'].includes(id) ? 2 : 1000); })) throw new Error('公開工作區無效。');
+    || ids.some(function(id) { return !Number.isInteger(units[id]) || units[id] < 1 || units[id] > 1000; })) throw new Error('公開工作區無效。');
   const safeUnits = {}; ids.forEach(function(id) { safeUnits[id] = units[id]; });
   return { alias: alias, goal: goal, start: start, end: end, workspaceIds: ids.slice(), workspaceUnits: safeUnits };
 }

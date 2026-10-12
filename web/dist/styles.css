@@ -221,9 +221,12 @@ h1 { margin: 0; font-size: 29px; font-weight: 700; letter-spacing: -.8px; }
 .workspace-options { display: flex; gap: 8px; flex-wrap: wrap; }
 .workspace-option { padding: 8px 11px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .workspace-option:has(input:checked) { border-color: var(--checked-border); background: var(--checked-bg); }
+.workspace-choice, .units-control { display: flex; align-items: center; gap: 6px; }
+.workspace-choice { cursor: pointer; }
 .workspace-option input { accent-color: var(--blue); }
-.units-select { margin-left: 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--accent-muted); font: inherit; font-size: 11px; padding: 3px; }
-.units-select:disabled { opacity: .45; }
+.units-control { margin-left: 4px; }
+.units-input { width: 64px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--accent-muted); font: inherit; font-size: 11px; padding: 3px; }
+.units-input:disabled { opacity: .45; }
 .assignment-note, .demo-dialog-note { font-size: 11px; color: var(--subtle); line-height: 1.7; margin: 12px 0 0; }
 .assignment-error { font-size: 12px; color: var(--warning); }
 .dialog-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 20px; }

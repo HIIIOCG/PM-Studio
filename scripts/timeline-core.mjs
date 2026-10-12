@@ -4,9 +4,9 @@ const has = value => text(value) !== '';
 const rescheduled = value => /改期|延期|延長|延後|順延|待排|待定|日期未定|日期待|排程待|尚未.*(?:日期|排程)|(?:日期|排程).*(?:未確定|待確認)/u.test(text(value));
 
 export const WORKSPACES = Object.freeze([
-  Object.freeze({ id: 'A', name: '3D角色模型 A', capacity: 2, unit: '角色', type: 'character' }),
-  Object.freeze({ id: 'B', name: '3D角色模型 B', capacity: 2, unit: '角色', type: 'character' }),
-  Object.freeze({ id: 'C', name: '額外模型項目', capacity: null, unit: '項目', type: 'additional-model' }),
+  Object.freeze({ id: 'A', name: '3D角色模型 A', capacity: null, usualLoad: 2, unit: '角色', type: 'character' }),
+  Object.freeze({ id: 'B', name: '3D角色模型 B', capacity: null, usualLoad: 2, unit: '角色', type: 'character' }),
+  Object.freeze({ id: 'C', name: '角色與場景模型', capacity: null, unit: '項目', type: 'character-and-scene' }),
   Object.freeze({ id: 'D', name: 'CT 遊戲美術外包', capacity: null, unit: '項目', type: 'ct-art' }),
 ]);
 
@@ -142,7 +142,9 @@ export function planBlocks(projects, workspaces = WORKSPACES) {
   }
   const overloads = [];
   for (const workspace of workspaces) {
-    if (!Number.isInteger(workspace.capacity) || workspace.capacity < 1) continue;
+    const referenceOnly = !Number.isInteger(workspace.capacity) || workspace.capacity < 1;
+    const limit = referenceOnly ? workspace.usualLoad : workspace.capacity;
+    if (!Number.isInteger(limit) || limit < 1) continue;
     const active = blocks.filter(block => block.workspaceIds.includes(workspace.id));
     const events = new Map();
     for (const block of active) {
@@ -156,8 +158,8 @@ export function planBlocks(projects, workspaces = WORKSPACES) {
       for (const block of covered) caseUnits.set(block.projectId,
         Math.max(caseUnits.get(block.projectId) || 0, block.workspaceUnits[workspace.id]));
       const used = [...caseUnits.values()].reduce((sum, units) => sum + units, 0);
-      if (used > workspace.capacity) overloads.push({ workspaceId: workspace.id, startDay: day,
-        endDay: days[i + 1] - 1, used, capacity: workspace.capacity,
+      if (used > limit) overloads.push({ workspaceId: workspace.id, startDay: day,
+        endDay: days[i + 1] - 1, used, capacity: limit, referenceOnly,
         projectIds: [...new Set(covered.map(block => block.projectId))] });
     }
   }

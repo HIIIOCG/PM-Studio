@@ -13,7 +13,7 @@ export function validateEnvelope(value, mode) {
     if (!item || !allowed.includes(item.id) || ids.has(item.id)) throw new Error('工作區資料無效。');
     ids.add(item.id);
     return { id: item.id, name: cleanText(item.name, 80) || `工作區 ${item.id}`,
-      capacity: item.id === 'A' || item.id === 'B' ? 2 : null,
+      capacity: null, ...(item.id === 'A' || item.id === 'B' ? { usualLoad: 2 } : {}),
       unit: item.id === 'A' || item.id === 'B' ? '角色' : '項目' };
   });
   if (!workspaces.length) throw new Error('缺少工作區資料。');
@@ -29,7 +29,8 @@ export function normalizePlacement(project, workspaces) {
   const units = {};
   for (const id of supplied) {
     const n = project.workspaceUnits?.[id] ?? 1;
-    if (!Number.isInteger(n) || n < 1 || n > (id === 'A' || id === 'B' ? 2 : 1000)) throw new Error('工作區使用數量無效。');
+    // Technical data bound only; actual extra work still requires confirmation.
+    if (!Number.isInteger(n) || n < 1 || n > 1000) throw new Error('工作區使用數量無效。');
     units[id] = n;
   }
   return { workspaceIds: [...supplied], workspaceUnits: units };

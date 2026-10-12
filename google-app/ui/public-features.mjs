@@ -13,7 +13,7 @@ function makeCard(project, cross, width, phase = 'production', attached = false,
   card.append(create('span', 'card-heading', phase === 'correction' ? `${project.alias} · 追加修正` : project.alias));
   if (!attached) {
     card.append(create('span', 'card-goal', project.goal || '製作排程'));
-    const areaText = renderIds.map((id) => { const space = workspaces().find((item) => item.id === id); return Number.isFinite(space?.capacity) ? `${id}（${workspaceUnits(project, space)}角色）` : id; }).join(' ＋ ');
+    const areaText = renderIds.map((id) => { const space = workspaces().find((item) => item.id === id); return `${id}（${workspaceUnits(project, space || { id })} ${space?.unit || '項目'}）`; }).join(' ＋ ');
     card.append(create('span', 'cross-label', splitCross ? `同案跨區 ${project.workspaceIds.join(' ＋ ')} · 本段 ${areaText}` : `工作區 ${areaText}`));
     const bottom = create('span', 'card-bottom');
     bottom.append(create('span', 'card-dates', `${dateText(start)} → ${dateText(end)}`));
@@ -30,6 +30,6 @@ function openProject(project) {
   detailRow('交付目標', project.goal || '製作排程');
   detailRow('排程日期', `${dateText(project.start)} → ${dateText(project.end)}`);
   if (project.correctionStart || project.correctionEnd) detailRow('追加修正', `${dateText(project.correctionStart)} → ${dateText(project.correctionEnd)}`);
-  detailRow('工作區', project.workspaceIds.join(' ＋ ') || '待安排');
+  detailRow('工作區', project.workspaceIds.map((id) => { const space = workspaces().find((item) => item.id === id); return `${id}（${workspaceUnits(project, space || { id })} ${space?.unit || '項目'}）`; }).join(' ＋ ') || '待安排');
   $('project-dialog').showModal();
 }

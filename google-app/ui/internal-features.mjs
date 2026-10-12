@@ -2,7 +2,9 @@ async function saveAssignment(ids) {
   const project = state.activeProject;
   if (!project || !state.payload?.permissions?.canEditLayout) return;
   const assignments = Object.fromEntries(state.payload.projects.map((item) => [item.id, item.id === project.id ? ids : item.workspaceIds ?? []]));
-  const activeAllocation = Object.fromEntries(ids.map((id) => [id, Number($('workspace-options').querySelector(`select[data-workspace="${id}"]`)?.value || 1)]));
+  let activeAllocation;
+  try { activeAllocation = readWorkspaceAllocations(ids); }
+  catch (error) { $('assignment-error').textContent = error.message; $('assignment-error').hidden = false; return; }
   const allocations = Object.fromEntries(state.payload.projects.map((item) => [item.id, item.id === project.id ? activeAllocation : item.workspaceUnits ?? {}]));
   $('save-assignment').disabled = true; $('clear-assignment').disabled = true;
   try {
@@ -16,7 +18,7 @@ async function saveAssignment(ids) {
   finally { $('save-assignment').disabled = false; $('clear-assignment').disabled = false; }
 }
 
-$('assignment-form').addEventListener('submit', (event) => { event.preventDefault(); saveAssignment([...$('workspace-options').querySelectorAll('input:checked')].map((input) => input.value)); });
+$('assignment-form').addEventListener('submit', (event) => { event.preventDefault(); saveAssignment([...$('workspace-options').querySelectorAll('input[data-workspace]:checked')].map((input) => input.dataset.workspace)); });
 $('clear-assignment').addEventListener('click', () => saveAssignment([]));
 $('layout-demo').addEventListener('click', () => {
   if (!state.payload) return;

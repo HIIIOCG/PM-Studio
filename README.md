@@ -1,26 +1,28 @@
 # PM Studio
 
-沿用既有 PM Studio 儲存庫，保留最新程式，從乾淨的單一根提交重新開始。Google Apps Script 提供內部與公開兩個獨立的工作區卡片排程網站；此版本只保存程式、規則、虛構測試與部署說明。
+PM Studio shares our production schedule for 3D characters, environments, and game art.
 
-AI 工作規則見 [AGENTS.md](AGENTS.md)，部署說明見 [Google 網頁](google-app/README.md)。最新專案現況只維護在 Google 試算表的「專案列表」；工作區安排存於獨立設定表，公開網站只讀經核准的匿名資料。
+Explore the timeline by week or month, search projects, and open a project to see its published goal, dates, and workspaces. Light and dark themes are available.
 
-實際來源 ID 只填在 Apps Script 指令碼屬性。既有私有操作入口可保留於 Git 忽略的 `local/operations/`；使用前讀取其中最新設定，再讀最新雲端資料。原始附件與全文 TXT 保存於 Drive；`transcripts/<案號>/` 只保存實際來源的本機私有解析文字，由 `.gitignore` 忽略，不上傳乾淨程式庫。私有操作資料與舊版備份留在本機，不納入乾淨程式歷史。
+Public schedules contain only reviewed anonymous project information and show the last publication time. Contact our team to discuss your project and confirm availability. An empty time span does not reserve production time; every booking requires team confirmation.
 
-## 本機檢查
+<details>
+<summary>Maintenance and publishing</summary>
 
-使用 Node.js 24。
+The public site is prepared for this repository's own GitHub Pages project at `/PM-Studio/`. The repository owner controls public visibility and Pages activation. Releases are started manually after the approved anonymous snapshot is reviewed; pushing source changes does not publish the site automatically.
 
-```sh
-node --test google-app/tests/*.test.mjs web/tests/timeline-core.test.mjs
-node scripts/serve-google-preview.mjs
-```
-
-預覽入口為 [內部示意](http://127.0.0.1:4318/internal)與 [公開示意](http://127.0.0.1:4318/public)，僅使用虛構案件，不能視為真實檔期。
-
-## 建立部署包
+Use Node.js 24 to build and preview the approved public artifact:
 
 ```sh
-node scripts/build-google-ui.mjs
+node scripts/build-public-site.mjs --snapshot public/data/schedule.json
+node scripts/serve-public-site.mjs
 ```
 
-兩份獨立 Apps Script 部署包產生於 `local/google-app-bundle/`。內部版按存取者的 Google 共用權限讀取資料；公開版僅顯示人工核准的匿名排程，空白時間仍須由團隊確認。
+The build produces only the public HTML and anonymous schedule under the ignored `local/public-site/` directory. Google remains the source of project information; the snapshot is a publication artifact.
+
+- [Project rules and agent instructions](AGENTS.md)
+- [Public snapshot and GitHub Pages publication](.agents/public-site.md)
+- [Development, Google permissions, and deployment](.agents/web-development.md)
+- [Google Apps Script applications](google-app/README.md)
+
+</details>

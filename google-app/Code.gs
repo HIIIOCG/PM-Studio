@@ -5,9 +5,9 @@ const PM_INTERNAL_ = Object.freeze({
   approvalHeader: ['projectId', 'approved', 'alias', 'approvedGoal', 'scheduleStart', 'scheduleEnd', 'approvedRevision'],
   feedHeader: ['alias', 'approvedGoal', 'scheduleStart', 'scheduleEnd', 'workspaceIds', 'workspaceUnits'],
   workspaces: [
-    { id: 'A', name: '3D角色模型 A', capacity: 2, unit: '角色', type: 'character' },
-    { id: 'B', name: '3D角色模型 B', capacity: 2, unit: '角色', type: 'character' },
-    { id: 'C', name: '額外模型項目', capacity: null, unit: '項目', type: 'additional-model' },
+    { id: 'A', name: '3D角色模型 A', capacity: null, usualLoad: 2, unit: '角色', type: 'character' },
+    { id: 'B', name: '3D角色模型 B', capacity: null, usualLoad: 2, unit: '角色', type: 'character' },
+    { id: 'C', name: '角色與場景模型', capacity: null, unit: '項目', type: 'character-and-scene' },
     { id: 'D', name: 'CT 遊戲美術外包', capacity: null, unit: '項目', type: 'ct-art' }
   ]
 });
@@ -161,8 +161,8 @@ function validateLayout_(assignments, allocations, projects) {
     result.assignments[id] = allowed.map(function(w) { return w.id; }).filter(function(area) { return ids.includes(area); });
     result.allocations[id] = {};
     result.assignments[id].forEach(function(area) {
-      const capacity = allowed.find(function(workspace) { return workspace.id === area; }).capacity;
-      if (!Number.isInteger(units[area]) || units[area] < 1 || units[area] > (capacity === null ? 1000 : capacity)) throw new Error('角色占用數量無效。');
+      // Bound the data size; this is not a confirmed production capacity.
+      if (!Number.isInteger(units[area]) || units[area] < 1 || units[area] > 1000) throw new Error('工作區占用數量無效。');
       result.allocations[id][area] = units[area];
     });
   });

@@ -166,13 +166,36 @@ test('same-resource intersecting dates stack visually but nonintersecting ranges
   assert.equal(byId['C-004'].stackIndex, 0);
 });
 
-test('two one-character projects fit A capacity and three create an overload', () => {
+test('A/B have a usual-load reminder without a fixed character capacity', () => {
   const projects = [project(), project({ id: 'C-002' }), project({ id: 'C-003' })];
   assert.deepEqual(planBlocks(projects.slice(0, 2)).overloads, []);
   const [overload] = planBlocks(projects).overloads;
   assert.deepEqual(overload, { workspaceId: 'A', startDay: parseDay('2026-10-01'), endDay: parseDay('2026-10-20'),
-    used: 3, capacity: 2, projectIds: ['C-001', 'C-002', 'C-003'] });
-  assert.equal(WORKSPACES.find(workspace => workspace.id === 'B').capacity, 2);
+    used: 3, capacity: 2, referenceOnly: true, projectIds: ['C-001', 'C-002', 'C-003'] });
+  for (const id of ['A', 'B']) {
+    const workspace = WORKSPACES.find(item => item.id === id);
+    assert.equal(workspace.capacity, null);
+    assert.equal(workspace.usualLoad, 2);
+  }
+});
+
+test('additional A/B/C character units remain visible without truncation or inferred reassignment', () => {
+  const input = project({ workspaceIds: ['A', 'B', 'C'], workspaceUnits: { A: 4, B: 3, C: 5 } });
+  const before = structuredClone(input);
+  const plan = planBlocks([input]);
+  assert.equal(plan.blocks.length, 1);
+  assert.deepEqual(plan.blocks[0].workspaceUnits, { A: 4, B: 3, C: 5 });
+  assert.deepEqual(plan.unassigned, []);
+  assert.deepEqual(plan.overloads.map(item => [item.workspaceId, item.used, item.referenceOnly]),
+    [['A', 4, true], ['B', 3, true]]);
+  assert.deepEqual(input, before);
+});
+
+test('explicit capacity for a custom workspace remains distinct from a usual-load reminder', () => {
+  const plan = planBlocks([project({ workspaceUnits: { A: 3 } })],
+    [{ id: 'A', capacity: 2, usualLoad: 1 }]);
+  assert.equal(plan.overloads[0].capacity, 2);
+  assert.equal(plan.overloads[0].referenceOnly, false);
 });
 
 test('a two-character case plus another character overloads only their shared inclusive interval', () => {

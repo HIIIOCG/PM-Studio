@@ -146,18 +146,22 @@ test('extracted date rules match timeline core: leap dates, partial/inverted dat
   ]) assert.deepEqual(plain(context.getProjectDates_(item)), getProjectDates(item));
 });
 
-test('layout updates accept explicit A/B capacity 2 and unknown C/D capacity without guessing', () => {
+test('layout updates preserve confirmed extra A/B characters and C/D units without fixed capacity', () => {
   const env = setup();
-  const result = env.rpc('saveLayout', inputFor(env, ['D', 'A', 'C'], { D: 3, A: 2, C: 4 }));
-  assert.deepEqual(plain(result.projects[0].workspaceIds), ['A', 'C', 'D']);
-  assert.deepEqual(plain(result.projects[0].workspaceUnits), { A: 2, C: 4, D: 3 });
+  const result = env.rpc('saveLayout', inputFor(env, ['D', 'B', 'A', 'C'], { D: 3, B: 4, A: 3, C: 5 }));
+  assert.deepEqual(plain(result.projects[0].workspaceIds), ['A', 'B', 'C', 'D']);
+  assert.deepEqual(plain(result.projects[0].workspaceUnits), { A: 3, B: 4, C: 5, D: 3 });
+  assert.deepEqual(plain(env.rpc('getTimeline').projects[0].workspaceUnits), { A: 3, B: 4, C: 5, D: 3 });
+  assert.deepEqual(plain(result.workspaces.map(workspace => workspace.capacity)), [null, null, null, null]);
+  assert.deepEqual(plain(result.workspaces.filter(workspace => workspace.usualLoad).map(workspace => [workspace.id, workspace.usualLoad])), [['A', 2], ['B', 2]]);
+  assert.equal(result.workspaces.find(workspace => workspace.id === 'C').name, '角色與場景模型');
   assert.deepEqual(env.state.writes.map(write => write.sheet), ['工作區安排']);
   assert.equal(env.state.releases, 1); assert.ok(env.state.notesCleared.includes('工作區安排'));
 });
 
 test('invalid workspace, units, unknown project and surplus request fields do not write', () => {
   const cases = [
-    env => inputFor(env, ['A'], { A: 3 }), env => inputFor(env, ['Z'], { Z: 1 }),
+    env => inputFor(env, ['A'], { A: 1001 }), env => inputFor(env, ['Z'], { Z: 1 }),
     env => inputFor(env, ['A', 'A'], { A: 1 }), env => inputFor(env, ['A'], { A: 0 }),
     env => inputFor(env, ['A'], { A: 1, B: 1 }),
     env => ({ ...inputFor(env), mode: 'public' }),
@@ -166,6 +170,18 @@ test('invalid workspace, units, unknown project and surplus request fields do no
   ];
   for (const make of cases) {
     const env = setup(); assert.throws(() => env.rpc('saveLayout', make(env))); assert.deepEqual(env.state.writes, []);
+  }
+});
+
+test('all workspace unit counts keep a technical integer bound independent of usual load', () => {
+  for (const area of ['A', 'B', 'C', 'D']) {
+    for (const units of [-1, 0, 1.5, 1001, '3']) {
+      const env = setup();
+      assert.throws(() => env.rpc('saveLayout', inputFor(env, [area], { [area]: units })), /數量/);
+      assert.deepEqual(env.state.writes, []);
+    }
+    const env = setup();
+    assert.equal(env.rpc('saveLayout', inputFor(env, [area], { [area]: 1000 })).projects[0].workspaceUnits[area], 1000);
   }
 });
 
@@ -255,7 +271,8 @@ test('public feed fails closed on extra sheets/columns, formulas, sensitive fiel
     env => { env.feed.values[1][1] = 'C-001 目標'; }, env => { env.feed.values[1][2] = '2026-12'; },
     env => { env.feed.values[1][2] = '2026-02-29'; }, env => { env.feed.values[1][3] = '2026-01-01'; },
     env => { env.feed.values[1][4] = '["Z"]'; env.feed.values[1][5] = '{"Z":1}'; },
-    env => { env.feed.values[1][5] = '{"A":1,"sourceId":"secret"}'; }, env => { env.feed.values[1][5] = '{"A":3}'; },
+    env => { env.feed.values[1][5] = '{"A":1,"sourceId":"secret"}'; }, env => { env.feed.values[1][5] = '{"A":1001}'; },
+    env => { env.feed.values[1][5] = '{"A":0}'; }, env => { env.feed.values[1][5] = '{"A":1.5}'; },
     env => { env.feed.values.push([...safeRow]); }
   ];
   for (const mutate of mutations) {
@@ -274,8 +291,8 @@ test('bounded reads fail instead of silently discarding source row 1001', () => 
   assert.throws(() => pub.rpc('getTimeline'), /公開排程目前/); assert.deepEqual(pub.state.reads, []);
 });
 
-test('approved anonymous B+C spanning project and D project remain available with unknown C/D capacity', () => {
-  for (const [ids, units] of [[['B', 'C'], { B: 2, C: 3 }], [['D'], { D: 4 }]]) {
+test('approved anonymous extra A/B characters, C models and D work survive publication and readback', () => {
+  for (const [ids, units] of [[['A', 'B', 'C'], { A: 3, B: 4, C: 3 }], [['D'], { D: 4 }]]) {
     const env = setup('internal', { publisher: true });
     env.rpc('saveLayout', inputFor(env, ids, units));
     const input = approvalFor(env); input.approvals[0].workspaceIds = ids; input.approvals[0].workspaceUnits = units;
@@ -284,7 +301,8 @@ test('approved anonymous B+C spanning project and D project remain available wit
     const payload = publicEnv.rpc('getTimeline');
     assert.deepEqual(plain(payload.projects[0].workspaceIds), ids);
     assert.deepEqual(plain(payload.projects[0].workspaceUnits), units);
-    assert.equal(payload.workspaces.find(w => w.id === 'C').capacity, null);
-    assert.equal(payload.workspaces.find(w => w.id === 'D').capacity, null);
+    assert.ok(payload.workspaces.every(w => w.capacity === null));
+    assert.equal(payload.workspaces.find(w => w.id === 'A').usualLoad, 2);
+    assert.equal(payload.workspaces.find(w => w.id === 'B').usualLoad, 2);
   }
 });

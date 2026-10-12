@@ -30,18 +30,48 @@ function browserCore(source, view) {
   return removeExports(core);
 }
 
-export async function buildGoogleUi({ outputDir = resolve(root, 'google-app'), packageDir = resolve(root, 'local/google-app-bundle') } = {}) {
+function staticClient(source) {
+  return source
+    .replace('activeProject: null, loading: false', 'activeProject: null, loading: false, stale: false')
+    .replace('const callGoogle = createGoogleBridge(APP_VIEW);', 'const callSchedule = createStaticBridge();')
+    .replace("callGoogle('getTimeline')", "callSchedule('getTimeline')")
+    .replace("timeZone: 'Asia/Taipei', month:", "timeZone: 'Asia/Taipei', year: 'numeric', month:")
+    .replace("`${part('month')}/${part('day')} ${part('hour')}:${part('minute')}`", "`${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}（台北時間）`")
+    .replace('state.payload = payload;', 'state.payload = payload;\n    state.stale = false;')
+    .replace("notify(payload.warnings?.length ? payload.warnings.join('；') : '');", "notify(payload.projects.length ? '' : '目前尚無已公開排程；請聯繫團隊確認檔期。');")
+    .replace("notify(APP_VIEW === 'public' ? '無法讀取公開排程，請稍後再試。' : error.message, true);\n    $('sync-status').textContent = '尚未讀取';", "state.stale = true;\n    notify(state.payload ? '無法重新讀取公開排程；目前顯示上次成功讀取的資料，請稍後再試。' : '無法讀取公開排程，請稍後再試。', true);\n    if (state.payload) render();\n    else $('sync-status').textContent = '尚未讀取公開排程';")
+    .replace("$('sync-status').textContent = state.payload.syncedAt ? `已更新 · ${syncTimeLabel(state.payload.syncedAt)}` : '已讀取排程';", "$('sync-status').textContent = `${state.stale ? '讀取失敗 · 上次發布' : '最後發布'} · ${syncTimeLabel(state.payload.syncedAt)}`;")
+    .replace("setInterval(() => { const current = taipeiToday(); if (current === today || state.payload?.preview) return; load(); }, 60000);", "setInterval(() => { const current = taipeiToday(); if (current === today) return; const followToday = state.start === today; today = current; if (followToday) state.start = today; if (state.payload) { state.payload.today = current; render(); } }, 60000);");
+}
+
+export async function buildGoogleUi({
+  outputDir = resolve(root, 'google-app'),
+  packageDir = resolve(root, 'local/google-app-bundle'),
+  views = ['internal', 'public'],
+  transport = 'google',
+} = {}) {
+  if (!['google', 'static'].includes(transport)
+    || !Array.isArray(views) || !views.length || new Set(views).size !== views.length
+    || views.some((view) => !['internal', 'public'].includes(view))) throw new Error('前端建置設定無效。');
+  if (transport === 'static' && (views.length !== 1 || views[0] !== 'public' || packageDir)) {
+    throw new Error('靜態網站僅能建置公開前端，不能包含 Apps Script 部署包。');
+  }
   const [html, css, theme, app, core, contract, bridge, client, publicFeatures, internalFeatures] = await Promise.all([
     read('web/dist/index.html'), read('web/dist/styles.css'), read('web/dist/theme.mjs'), read('web/dist/app.mjs'),
     read('scripts/timeline-core.mjs'), read('google-app/ui/common-contract.mjs'), read('google-app/ui/bridge.mjs'), read('google-app/ui/client.mjs'),
     read('google-app/ui/public-features.mjs'), read('google-app/ui/internal-features.mjs'),
   ]);
-  const metrics = section(app, 'function buildLayout', 'function makeCard');
+  const metrics = section(app, 'function buildLayout', 'function makeCard')
+    .replace('目前區間未排工作', transport === 'static' ? '目前區間無已公開排程' : '目前區間未排工作');
   const dateRange = section(app, 'function updateDateRange', 'function detailRow');
+  const staticSources = transport === 'static'
+    ? `${removeExports(section(await read('scripts/public-snapshot.mjs'), 'function exactKeys', 'export function snapshotFromFeedRows'))}\n${removeExports(await read('google-app/ui/static-bridge.mjs'))}`
+    : '';
   await mkdir(outputDir, { recursive: true });
   const output = [];
-  for (const view of ['internal', 'public']) {
-    const modeContract = await read(`google-app/ui/${view}-contract.mjs`);
+  for (const view of views) {
+    let modeContract = await read(`google-app/ui/${view}-contract.mjs`);
+    if (transport === 'static') modeContract = modeContract.replace('goal: cleanText(project.goal, 300)', 'goal: cleanText(project.goal, 500)');
     let template = html;
     template = template.replace('<script src="/theme.mjs"></script>', () => `<script>${safeScript(theme)}</script>`)
       .replace('<link rel="stylesheet" href="/styles.css">', () => `<style>${css}\n.view-label { font-size: 12px; font-weight: 650; padding: 7px 11px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); background: var(--surface-raised); }\n</style>`)
@@ -63,6 +93,13 @@ export async function buildGoogleUi({ outputDir = resolve(root, 'google-app'), p
       uiClient = uiClient.replace("APP_VIEW === 'public' ? normalizePublicPayload : normalizeInternalPayload", 'normalizePublicPayload')
         .replace(section(uiClient, "  const source = $('source-link');", "  $('month-view')"), '');
       features = publicFeatures;
+      if (transport === 'static') {
+        uiBridge = staticSources;
+        uiClient = staticClient(uiClient);
+        template = template.replace('<title>PM Studio｜工作區排程</title>', '<title>PM Studio｜公開排程</title>')
+          .replace('aria-label="重新讀取專案資料"', 'aria-label="重新讀取公開排程"')
+          .replace('檔期預留依團隊確認。', '公開排程以團隊確認為準；空白時段不代表可預約。');
+      }
     } else {
       template = template.replace('<button id="refresh"', '<button id="layout-demo" class="quiet-button">版型示意</button><button id="refresh"');
       uiClient = uiClient.replace("APP_VIEW === 'public' ? normalizePublicPayload : normalizeInternalPayload", 'normalizeInternalPayload')
@@ -75,7 +112,7 @@ export async function buildGoogleUi({ outputDir = resolve(root, 'google-app'), p
     const script = `// Generated from PM Studio UI sources. No project records are embedded.\n(async () => {\nconst APP_VIEW = ${JSON.stringify(view)};\n${browserCore(core, view)}\n${removeExports(contract)}\n${removeExports(modeContract)}\n${removeExports(uiBridge)}\n${metrics}\n${dateRange}\n${uiClient}\n${features}\n})();`;
     template = template.replace('<script type="module" src="/app.mjs"></script>', () => `<script>${safeScript(script)}</script>`)
       .replace(/^[ \t]+$/gm, '');
-    const filename = view === 'public' ? 'PublicIndex.html' : 'Index.html';
+    const filename = transport === 'static' ? 'index.html' : view === 'public' ? 'PublicIndex.html' : 'Index.html';
     await writeFile(resolve(outputDir, filename), template);
     output.push({ view, filename, html: template });
     if (packageDir) {
