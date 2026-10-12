@@ -1,0 +1,13 @@
+local/
+transcripts/
+node_modules/
+.env
+.env.*
+.clasp.json
+.clasprc.json
+*.key
+*.pem
+credentials*.json
+client_secret*.json
+service-account*.json
+token*.json
