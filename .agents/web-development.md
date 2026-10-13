@@ -1,8 +1,26 @@
 # Website development and deployment
 
-PM Studio includes two independent Google Apps Script applications and a public GitHub Pages frontend. The internal workspace planner and public Google reader retain separate projects, identities and permissions. This guide covers their source files, local workflow and spreadsheet contracts. The public static frontend uses manually reviewed anonymous snapshots; read the [public website guide](public-site.md) for its independent repository Pages release. For an overview, see the [project README](../README.md).
+PM Studio is migrating to one Project List spreadsheet and one Apps Script. The 2026-10-13 scope covers backups, source-sheet consolidation, and rules only. The code and live websites still implement two independent Apps Script applications and a GitHub Pages anonymous snapshot. The new Script, simplified interface, deployment, and retirement of old resources remain later steps. See the [project rules](../AGENTS.md) for the current authority and the [public website guide](public-site.md) for the retained legacy release contract.
 
-## Local development
+## Current data rules and migration boundary
+
+The `專案列表` tab is the sole place to maintain project information, dates, status, and confirmed workspace allocations. Keep the header on row 5 and projects from row 6. Retain A:Q; remove the former R field `對外名稱` and use R:V as follows:
+
+| Column | Field | Meaning |
+| --- | --- | --- |
+| R | `客戶編號` | Public customer code only; never the full customer field containing a name |
+| S | `工作區 A 占用` | Confirmed allocation in workspace A |
+| T | `工作區 B 占用` | Confirmed allocation in workspace B |
+| U | `工作區 C 占用` | Confirmed allocation in workspace C |
+| V | `工作區 D 占用` | Confirmed allocation in workspace D |
+
+Preserve existing project IDs and dates. Missing or uncertain codes and assignments remain blank and require clarification; do not derive them from names or project categories. Back up before consolidation, preserve all confirmed allocations, and read back the source after writing. An edit to this guide does not prove that migration succeeded.
+
+The target public service includes every project using its project ID and customer code, with dates and necessary workspace information. It no longer uses public aliases, per-project publication approvals, or a separate anonymous spreadsheet. Build the public response on the server from an explicit field allowlist. Project and customer names, staff names, internal goals, notes, source links, credentials, and private settings must never reach the public browser. Projects with incomplete dates or no assigned workspace remain visible as pending.
+
+Maintain new allocations in the source sheet. Do not use the old website's `saveLayout` operation, which writes the separate settings spreadsheet. Do not call the old `publishApprovedSnapshot` operation after removing `對外名稱`, or restore that column to satisfy the old code. Preserve the old resources for recovery until the replacement is verified. This step does not change deployment identities, loosen access checks, run a release, or retire a deployment.
+
+## Legacy application: local development
 
 Use Node.js 24 and run these commands from the repository root. The build and test scripts use Node's built-in modules; no package installation is required.
 
@@ -36,9 +54,9 @@ This generates `google-app/Index.html`, `google-app/PublicIndex.html`, and two d
 
 Edit the source files and rebuild the generated HTML. Changes made directly to `Index.html` or `PublicIndex.html` will be overwritten. The builder extracts specific sections from the shared UI source, so changes to function boundaries also require checking the build script.
 
-## Data and permissions
+## Legacy application: data and permissions
 
-The `專案列表` (Project List) tab is the sole source of current project information. Workspace arrangements live in a separate settings spreadsheet, and the public schedule lives in a third, anonymous spreadsheet. Do not create another current-project register or copy private fields into the public feed.
+The following contracts describe the existing code, not the new maintenance rules above. The old reader takes projects from `專案列表`, allocations from a separate settings spreadsheet, and public records from a third anonymous spreadsheet. It does not yet consume the consolidated R:V fields. Preserve this reference for maintenance and migration; do not continue parallel upkeep of the old allocation or approval tables.
 
 Each internal request runs as the visiting Google user. The server requires a signed-in identity matching the effective user, then checks that user's access to the company Drive folder, project spreadsheet, and settings spreadsheet. Missing identity, configuration, or resource permission causes the request to fail. Workspace saves additionally require write access to the settings spreadsheet; publication requires write access to both settings and the anonymous feed. Ordinary internal access uses existing Google sharing permissions rather than an employee allowlist.
 
@@ -46,7 +64,7 @@ Keep actual file IDs and publisher accounts in Apps Script properties. Credentia
 
 ### Spreadsheet structure
 
-Keep these tab names and field names unchanged; they are part of the application's data contract.
+These are the old application's exact table contracts. They remain relevant when inspecting old code or backups; the current source-sheet schema above supersedes the old alias column.
 
 | Spreadsheet | Required tabs | Header position and limits |
 | --- | --- | --- |
@@ -86,11 +104,13 @@ Project IDs use a confirmed `C`, `BG`, `P`, `D`, or `O` prefix followed by a hyp
 
 Assignments and occupied units must reflect confirmed arrangements. Do not infer workspace D from every project category, treat a project owner as its executor, or equate an entire project period with continuous occupancy. The timeline reminds users when overlapping A/B allocations exceed their usual load of 2; this does not reject an additional confirmed arrangement. All workspace maxima remain unspecified, and flexible allocation does not establish unlimited availability. In the workspace payload, `capacity` is `null` and A/B use a separate `usualLoad: 2` reminder threshold. The numeric allocation limit of 1000 is a data-validation bound, not production capacity.
 
-The website saves workspace arrangements only. Maintain project dates and status in the source sheet. Keep original dates, current rescheduled dates, and correction periods distinct. Use `YYYY-MM-DD` for confirmed full dates and `YYYY-MM` when only the month is known. Missing, incomplete, or reversed ranges remain pending. The internal reader can use original dates when both current dates are empty and no rescheduling note indicates an unresolved schedule.
+The old website saves workspace arrangements to the separate settings table; that operation is no longer the maintenance route. Maintain dates, status, and allocations in the source sheet. Keep original dates, current rescheduled dates, and correction periods distinct. Use `YYYY-MM-DD` for confirmed full dates and `YYYY-MM` when only the month is known. Missing, incomplete, or reversed ranges remain pending. The old internal reader can use original dates when both current dates are empty and no rescheduling note indicates an unresolved schedule.
 
 Week/month navigation, moving to today, and expanding past dates affect the view only. The timeline continues across years, and collapsing past dates does not close a project. Reference delivery steps do not establish completion. Google Calendar integration is disabled; notifications and messages require explicit authorization with a confirmed time, channel, and recipient.
 
-## Create the Apps Script projects
+## Legacy reference: Apps Script projects
+
+These instructions document the old two-project deployment. Do not create another pair of projects as part of source-sheet consolidation. The single-Script replacement has not been implemented in this step.
 
 Build the packages, then create two separate Apps Script projects. Copy each package's files into its corresponding project:
 
@@ -126,7 +146,9 @@ The public project must contain **only** `PUBLIC_FEED_SHEET_ID`; it rejects addi
 
 A local preview or copied deployment package is not a live website. Confirm the deployed application and its readback before reporting it as available.
 
-## Internal API and publication
+## Legacy reference: internal API and publication
+
+These methods remain in the code. `saveLayout` and `publishApprovedSnapshot` are superseded operationally by the migration boundary above; their contracts are retained to explain the old implementation, not to require new aliases or approvals.
 
 | Method | Behavior |
 | --- | --- |

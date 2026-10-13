@@ -1,10 +1,20 @@
 # Public GitHub Pages website
 
-The public website is published by this PM Studio repository's own GitHub Pages workflow. It reuses the timeline interface and reads a same-site `data/schedule.json` file. The internal and public Apps Script projects remain independent. The Google `專案列表` remains the sole source of current project information; the JSON snapshot is a derived publication artifact, never another project register.
+The current website uses this repository's own GitHub Pages workflow and reads a same-site `data/schedule.json` file. It still implements the previous anonymous publication model. The Google `專案列表` is the sole source of current project information; the existing JSON is a legacy publication artifact, never another project register.
+
+## Current direction and migration boundary
+
+The 2026-10-13 data rules consolidate project information and workspace allocations into the source sheet. A single Apps Script and a simple date-navigation interface are the target. Every project will be identified publicly by project ID and customer code; separate public aliases, per-project publication approvals, and the anonymous spreadsheet are removed from the target design.
+
+The source sheet retains A:Q and replaces the old R field `對外名稱` with R:V: `客戶編號`, `工作區 A 占用`, `工作區 B 占用`, `工作區 C 占用`, `工作區 D 占用`. The backend must select only those public identifiers, dates, and necessary workspace information. It must not expose names, internal goals, notes, links, or private settings. Missing dates or assignments leave a project pending rather than hiding it.
+
+This step covers backups, source consolidation, and rules only. The single Script, website, and release pipeline have not been migrated or deployed. The legacy exporter below does not accept the new schema, and the old publication operation depends on the removed `對外名稱` field. Do not use that operation for new data, recreate the alias column, or put source-sheet records directly into the old snapshot. Preserve existing deployment artifacts until a verified replacement is ready.
 
 Repository visibility and Pages activation remain under the user's control. Preparing or pushing the source does not activate Pages or change repository visibility. Do not publish this project through the company homepage repository or another repository without separate explicit authorization.
 
-## Manual publication
+## Legacy reference: manual publication
+
+The following procedure documents the previous release pipeline for maintenance and recovery. Its approval requirements and anonymous schema describe the old code; they are not requirements for the new data model. No publication is included in the current consolidation step.
 
 1. Read the latest Google source and confirmed arrangements. An authorized publisher reviews the exact anonymous names, public goals, dates and workspaces, then uses the existing `publishApprovedSnapshot` operation. Its publisher configuration and revision checks remain mandatory. Building the website does not grant approval or bypass that operation.
 2. Read back the independent `匿名排程` spreadsheet and approval settings. Export only the anonymous table's six columns. Keep the source export in the Git-ignored `local/public-release/` directory. Never export the internal project table into this workflow.
@@ -41,7 +51,7 @@ Open `http://127.0.0.1:4320/PM-Studio/`. This local preview serves only the buil
 
 This is a manual release process. It adds no scheduled jobs, notifications, messages, or Calendar integration. Actual Google IDs, deployment URLs and credentials stay in private operational configuration.
 
-## Hosting and paths
+## Existing hosting and paths
 
 The intended project path is `/PM-Studio/`, matching the repository name and capitalization. Relative public assets work under this prefix. Verify both the project entry and its trailing-slash behavior after activation.
 
@@ -49,7 +59,7 @@ When the organization's existing Pages homepage has a custom domain, a project P
 
 The repository's own Pages workflow is the publication route. If visibility or activation is pending, leave the reviewed source and artifact ready for the user. Do not substitute an existing company-site directory or change another repository's publishing settings.
 
-## Data and browser behavior
+## Legacy reference: data and browser behavior
 
 The published schema is exactly:
 
@@ -65,12 +75,12 @@ The page reads `./data/schedule.json` without credentials. It exposes no Google 
 
 If loading fails, the page reports the failure. Previously loaded data is marked as a previous read even after date or view navigation; a successful retry restores the normal last-publication label. No sample data or internal fallback is available.
 
-## Checks
+## Legacy checks
 
 ```sh
 node --test google-app/tests/*.test.mjs web/tests/timeline-core.test.mjs
 ```
 
-These include rejection of private fields, invalid dates and malformed imports, protection of the previous snapshot and complete site on failures, clean public build contents, executable browser output, correct Taipei dates, stale reload status, and preservation of the independent Apps Script applications.
+These tests cover the current legacy code: rejection of private fields, invalid dates and malformed imports, protection of the previous snapshot and complete site on failures, clean public build contents, executable browser output, correct Taipei dates, stale reload status, and preservation of the independent Apps Script applications. Passing them does not verify support for the consolidated source sheet or the future single-Script service.
 
 Read the [project rules](../AGENTS.md) and [development guide](web-development.md) before changing the release process.
