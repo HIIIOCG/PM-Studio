@@ -30,24 +30,12 @@ export function renderPublicEntry(appUrl) {
 <style>
 :root{color-scheme:light dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#111518;color:#e8ecef}
 *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0}iframe{position:fixed;inset:0;width:100%;height:100%;height:100dvh;border:0;background:#111518}
-#connection{position:fixed;inset:0;display:grid;place-content:center;padding:24px;text-align:center;pointer-events:none;background:#111518}
-#connection[hidden]{display:none}#connection p{margin:8px 0;font-size:14px;line-height:1.6}#connection a{pointer-events:auto;color:inherit}
 .open-schedule{position:fixed;right:8px;bottom:8px;padding:5px 9px;border:1px solid #647078;border-radius:6px;background:#192126;color:#dce6ec;font-size:11px;text-decoration:none;opacity:.86}.open-schedule:focus-visible{outline:3px solid #88cced;outline-offset:2px}
 </style>
 </head>
 <body>
 <iframe id="schedule" src="${url}" title="PM Studio 專案排程" referrerpolicy="no-referrer"></iframe>
-<div id="connection" role="status"><p id="connection-message">正在連接排程…</p><p>若排程未顯示，可<a href="${url}" target="_blank" rel="noopener noreferrer">另開排程</a>。</p></div>
 <a class="open-schedule" href="${url}" target="_blank" rel="noopener noreferrer" aria-label="在新分頁開啟排程">另開排程 ↗</a>
-<script>
-const frame = document.getElementById('schedule');
-const connection = document.getElementById('connection');
-const message = document.getElementById('connection-message');
-const slowLoad = setTimeout(() => { message.textContent = '連接時間較長，請稍候或另開排程。'; }, 20000);
-frame.addEventListener('load', () => { clearTimeout(slowLoad); connection.hidden = true; });
-frame.addEventListener('error', () => { clearTimeout(slowLoad); connection.hidden = false; message.textContent = '目前無法連接排程，請稍後再試或另開排程。'; });
-</script>
-<noscript><style>#connection{display:none}</style></noscript>
 </body>
 </html>
 `;

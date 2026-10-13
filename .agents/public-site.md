@@ -18,7 +18,7 @@ index.html
 .nojekyll
 ```
 
-The HTML embeds the Script across the viewport, shows a neutral connection message, and offers a small direct schedule link if embedding fails. It performs no data reads of its own and provides no write or editing route. Cross-origin iframe load events cannot prove a successful application read, so verify the actual schedule separately.
+The HTML embeds the Script across the viewport and offers a small direct schedule link if embedding fails. It has no loading overlay or JavaScript and never waits for a cross-origin load event to reveal the schedule. It performs no data reads of its own and provides no write or editing route. Verify the actual schedule separately.
 
 The builder rejects unknown output files and symlink/junction paths. It stages a complete site before replacing the previous one and restores the previous site if installation fails. A known legacy `data/schedule.json` may be present only in an old output: migration preserves that complete site in a separate local backup and excludes the data folder from the new artifact. Do not add internal bundles, exports, or settings to the output.
 

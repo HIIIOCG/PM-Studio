@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile, readdir, rm, symlink } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Script, createContext } from 'node:vm';
 import { buildPublicSite, validateAppUrl, renderPublicEntry } from '../../scripts/build-public-site.mjs';
 import { createPublicPreviewHandler } from '../../scripts/serve-public-site.mjs';
 
@@ -66,10 +65,9 @@ test('public output contains only the read-only iframe entry and no project snap
   assert.ok(html.includes(`<iframe id="schedule" src="${appUrl}"`));
   assert.match(html, /height:100dvh/);
   assert.match(html, /referrerpolicy="no-referrer"/);
-  assert.match(html, /正在連接排程/);
   assert.match(html, /另開排程/);
   assert.doesNotMatch(html, /schedule\.json|google\.script|saveLayout|publishApprovedSnapshot|INTERNAL_SHEET_ID|sourceUrl|fetch\(|\/api\/|search|assignment-form|客戶名|目前交付目標/);
-  for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Script(match[1]);
+  assert.doesNotMatch(html, /<script|connection|setTimeout|addEventListener/);
   await buildPublicSite({ appUrl: updatedUrl, outputDir });
   assert.match(await readFile(resolve(outputDir, 'index.html'), 'utf8'), /TEST_002\/exec/);
   assert.deepEqual(await readdir(directory), ['site']);
@@ -158,24 +156,13 @@ test('junction ancestors are rejected before writing through them', async (t) =>
   assert.deepEqual(await readdir(actual), []);
 });
 
-test('connection status is neutral and failure keeps a direct schedule link available', () => {
+test('entry never masks the iframe or depends on cross-origin load events', () => {
   const html = renderPublicEntry(appUrl);
-  const frame = { listeners: {}, addEventListener(name, handler) { this.listeners[name] = handler; } };
-  const connection = { hidden: false };
-  const message = { textContent: '' };
-  let timer;
-  const context = createContext({
-    document: { getElementById(id) { return { schedule: frame, connection, 'connection-message': message }[id]; } },
-    setTimeout(handler) { timer = handler; return 1; }, clearTimeout() {},
-  });
-  for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Script(match[1]).runInContext(context);
-  timer();
-  assert.match(message.textContent, /連接時間較長/);
-  frame.listeners.load();
-  assert.equal(connection.hidden, true);
-  frame.listeners.error();
-  assert.equal(connection.hidden, false);
-  assert.match(message.textContent, /無法連接/);
+  const body = html.match(/<body>([\s\S]*?)<\/body>/)?.[1];
+  assert.ok(body);
+  assert.deepEqual([...body.matchAll(/<([a-z][\w-]*)\b/gi)].map((match) => match[1]), ['iframe', 'a']);
+  assert.match(html, /iframe\{position:fixed;inset:0;width:100%;height:100%;height:100dvh/);
+  assert.doesNotMatch(html, /<script|connection|setTimeout|addEventListener|onload|onerror|opacity:0|visibility:hidden|display:none/);
   assert.match(html, /class="open-schedule"[^>]+target="_blank"[^>]+rel="noopener noreferrer"/);
 });
 
