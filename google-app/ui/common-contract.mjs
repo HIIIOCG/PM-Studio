@@ -1,37 +1,37 @@
-export function cleanText(value, max = 4000) {
-  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+export const PENDING_REASONS = Object.freeze(['no-workspace', 'workspace-values', 'production-dates', 'correction-dates', 'customer-code']);
+export const SCHEDULE_WARNINGS = Object.freeze(['project-id-missing', 'project-id-invalid']);
+function scheduleKeys(value, allowed, required = allowed) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((key) => !allowed.includes(key)) || required.some((key) => !(key in value))) throw new Error('Invalid schedule fields.');
 }
-
-export function validateEnvelope(value, mode) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)
-    || value.mode !== mode || !Array.isArray(value.projects) || !Array.isArray(value.workspaces)) {
-    throw new Error('排程資料或存取版本不符。');
-  }
-  const ids = new Set();
-  const allowed = ['A', 'B', 'C', 'D'];
-  const workspaces = value.workspaces.map((item) => {
-    if (!item || !allowed.includes(item.id) || ids.has(item.id)) throw new Error('工作區資料無效。');
-    ids.add(item.id);
-    return { id: item.id, name: cleanText(item.name, 80) || `工作區 ${item.id}`,
-      capacity: null, ...(item.id === 'A' || item.id === 'B' ? { usualLoad: 2 } : {}),
-      unit: item.id === 'A' || item.id === 'B' ? '角色' : '項目' };
+function scheduleDateValue(value) {
+  if (typeof value !== 'string' || (value !== '' && !/^\d{4}-\d{2}(?:-\d{2})?$/.test(value))) throw new Error('Invalid schedule date.');
+  return value;
+}
+export function normalizeTimelinePayload(payload) {
+  scheduleKeys(payload, ['schemaVersion', 'today', 'syncedAt', 'projects', 'workspaces', 'warnings']);
+  if (payload.schemaVersion !== 2 || !/^\d{4}-\d{2}-\d{2}$/.test(payload.today) || !Number.isFinite(new Date(payload.today + 'T00:00:00Z').getTime()) || new Date(payload.today + 'T00:00:00Z').toISOString().slice(0, 10) !== payload.today) throw new Error('Invalid schedule version or day.');
+  if (typeof payload.syncedAt !== 'string' || !Number.isFinite(Date.parse(payload.syncedAt))) throw new Error('Invalid read time.');
+  if (!Array.isArray(payload.workspaces) || payload.workspaces.length !== 4) throw new Error('Invalid workspaces.');
+  const workspaces = payload.workspaces.map((space, index) => {
+    scheduleKeys(space, ['id', 'name', 'usualLoad'], ['id', 'name']);
+    if (space.id !== ['A', 'B', 'C', 'D'][index] || typeof space.name !== 'string' || space.name.length > 80) throw new Error('Invalid workspace.');
+    if ('usualLoad' in space && (!Number.isInteger(space.usualLoad) || space.usualLoad < 1)) throw new Error('Invalid usual load.');
+    return { ...space };
   });
-  if (!workspaces.length) throw new Error('缺少工作區資料。');
-  return { workspaces, today: /^\d{4}-\d{2}-\d{2}$/.test(value.today || '') ? value.today : '',
-    syncedAt: cleanText(value.syncedAt, 80), preview: value.preview === true };
-}
-
-export function normalizePlacement(project, workspaces) {
-  const ids = new Set(workspaces.map((item) => item.id));
-  const supplied = Array.isArray(project.workspaceIds) ? project.workspaceIds : [];
-  if (supplied.length > workspaces.length || supplied.some((id) => !ids.has(id))
-    || new Set(supplied).size !== supplied.length) throw new Error('工作區配置無效。');
-  const units = {};
-  for (const id of supplied) {
-    const n = project.workspaceUnits?.[id] ?? 1;
-    // Technical data bound only; actual extra work still requires confirmation.
-    if (!Number.isInteger(n) || n < 1 || n > 1000) throw new Error('工作區使用數量無效。');
-    units[id] = n;
-  }
-  return { workspaceIds: [...supplied], workspaceUnits: units };
+  if (!Array.isArray(payload.warnings) || payload.warnings.some((value) => !SCHEDULE_WARNINGS.includes(value))) throw new Error('Invalid warning.');
+  if (!Array.isArray(payload.projects) || payload.projects.length > 1000) throw new Error('Invalid projects.');
+  const ids = new Set();
+  const projects = payload.projects.map((project) => {
+    scheduleKeys(project, ['id', 'customerCode', 'start', 'end', 'correctionStart', 'correctionEnd', 'workspaceIds', 'workspaceUnits', 'pendingReasons']);
+    if (typeof project.id !== 'string' || !/^(?:C|BG|P|D|O)-\d{3,}$/.test(project.id) || ids.has(project.id)) throw new Error('Invalid project ID.');
+    ids.add(project.id);
+    if (typeof project.customerCode !== 'string' || (project.customerCode !== '' && !/^[A-Z]+-\d+$/.test(project.customerCode))) throw new Error('Invalid customer code.');
+    for (const key of ['start', 'end', 'correctionStart', 'correctionEnd']) scheduleDateValue(project[key]);
+    if (!Array.isArray(project.workspaceIds) || new Set(project.workspaceIds).size !== project.workspaceIds.length || project.workspaceIds.some((id) => !['A', 'B', 'C', 'D'].includes(id))) throw new Error('Invalid workspace assignment.');
+    scheduleKeys(project.workspaceUnits, project.workspaceIds);
+    if (Object.values(project.workspaceUnits).some((value) => !Number.isSafeInteger(value) || value < 1)) throw new Error('Invalid workspace units.');
+    if (!Array.isArray(project.pendingReasons) || project.pendingReasons.some((value) => !PENDING_REASONS.includes(value))) throw new Error('Invalid pending reason.');
+    return { ...project, workspaceIds: [...project.workspaceIds], workspaceUnits: { ...project.workspaceUnits }, pendingReasons: [...new Set(project.pendingReasons)] };
+  });
+  return { schemaVersion: 2, today: payload.today, syncedAt: payload.syncedAt, workspaces, projects, warnings: [...new Set(payload.warnings)] };
 }

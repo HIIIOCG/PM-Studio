@@ -1,4 +1,4 @@
-name: Publish approved schedule
+name: Publish PM Studio entrypoint
 
 on:
   workflow_dispatch:
@@ -43,9 +43,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Test website and publication boundaries
-        run: node --test google-app/tests/*.test.mjs web/tests/timeline-core.test.mjs
-      - name: Build approved public schedule
-        run: node scripts/build-public-site.mjs --snapshot public/data/schedule.json
+        run: node --test google-app/tests/*.test.mjs
+      - name: Build read-only schedule entrypoint
+        env:
+          PM_STUDIO_APP_URL: ${{ secrets.PM_STUDIO_APP_URL }}
+        run: node scripts/build-public-site.mjs
       - name: Upload public website
         uses: actions/upload-pages-artifact@v5
         with:

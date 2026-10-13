@@ -3,16 +3,15 @@ import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export async function startPublicPreview({ directory = resolve('local/public-site'), port = 4320 } = {}) {
+export function createPublicPreviewHandler(directory) {
   const root = resolve(directory);
-  for (const file of ['index.html', 'data/schedule.json']) if (!(await stat(resolve(root, file))).isFile()) throw new Error('請先建置公開網站。');
-  const server = createServer(async (request, response) => {
+  return async (request, response) => {
     if (request.method !== 'GET' && request.method !== 'HEAD') { response.writeHead(405); response.end(); return; }
     let path;
     try { path = new URL(request.url, 'http://127.0.0.1').pathname; }
     catch { response.writeHead(400); response.end(); return; }
     if (path === '/' || path === '/PM-Studio') { response.writeHead(302, { Location: '/PM-Studio/' }); response.end(); return; }
-    const files = { '/PM-Studio/': ['index.html', 'text/html; charset=utf-8'], '/PM-Studio/index.html': ['index.html', 'text/html; charset=utf-8'], '/PM-Studio/data/schedule.json': ['data/schedule.json', 'application/json; charset=utf-8'] };
+    const files = { '/PM-Studio/': ['index.html', 'text/html; charset=utf-8'], '/PM-Studio/index.html': ['index.html', 'text/html; charset=utf-8'] };
     const file = files[path];
     if (!file) { response.writeHead(404); response.end(); return; }
     try {
@@ -20,7 +19,13 @@ export async function startPublicPreview({ directory = resolve('local/public-sit
       response.writeHead(200, { 'Content-Type': file[1], 'Content-Length': body.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       response.end(request.method === 'HEAD' ? undefined : body);
     } catch { response.writeHead(503); response.end('無法讀取公開網站。'); }
-  });
+  };
+}
+
+export async function startPublicPreview({ directory = resolve('local/public-site'), port = 4320 } = {}) {
+  const root = resolve(directory);
+  for (const file of ['index.html', '.nojekyll']) if (!(await stat(resolve(root, file))).isFile()) throw new Error('請先建置公開網站。');
+  const server = createServer(createPublicPreviewHandler(root));
   await new Promise((resolveReady, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolveReady); });
   return server;
 }

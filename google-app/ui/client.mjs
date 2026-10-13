@@ -1,142 +1,162 @@
-const DAY = 86_400_000;
-const AXIS_HEIGHT = 76;
-const CARD_HEIGHT = 170;
-const CARD_GAP = 15;
-const ROW_PADDING = 15;
-const $ = (id) => document.getElementById(id);
-let today = taipeiToday();
-const state = { payload: null, zoom: 'month', pastExpanded: false, start: today, search: '', activeProject: null, loading: false, stale: false, noticeKey: null, noticeError: false };
-const callGoogle = createGoogleBridge(APP_VIEW);
-const normalizePayload = APP_VIEW === 'public' ? normalizePublicPayload : normalizeInternalPayload;
-function dayWidth() { return state.zoom === 'month' ? Math.max(4, $('timeline-viewport').clientWidth / 205) : 36; }
-function dayNumber(value) { return parseDay(value); }
-function fromDay(value) { return formatDay(value); }
-function addDays(value, days) { return fromDay(dayNumber(value) + days); }
-function shortDate(value) { return value?.slice(5).replace('-', '/') ?? t('unspecified'); }
-function dateText(value) { return value || t('unspecified'); }
-function syncTimeLabel(value) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return String(value);
-  try {
-    const parts = new Intl.DateTimeFormat('zh-TW', {
-      timeZone: 'Asia/Taipei', ...(APP_TRANSPORT === 'static' ? { year: 'numeric' } : {}), month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-    }).formatToParts(date);
-    const part = (name) => parts.find((item) => item.type === name)?.value || '';
-    return APP_TRANSPORT === 'static' ? `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}（${t('taipeiTime')}）` : `${part('month')}/${part('day')} ${part('hour')}:${part('minute')}`;
-  } catch { return String(value); }
+const scheduleElement = (id) => document.getElementById(id);
+const scheduleState = { payload: null, firstDay: null, loading: false, failed: false, layout: null };
+const readSchedule = createGoogleBridge();
+function scheduleNode(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
 }
-function create(tag, className, text) { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; }
-function workspaces() { return state.payload?.workspaces || []; }
-function overlaps(a, b) { return a.start <= b.end && b.start <= a.end; }
-function workspaceUnits(project, space) { const value = project.workspaceUnits?.[space?.id]; return Number.isInteger(value) && value > 0 ? value : 1; }
-function notify(message, error = false) { state.noticeKey = null; $('notification').textContent = message; $('notification').classList.toggle('error', error); $('notification').hidden = !message; }
-function notifyLocalized(key, error = false) { notify(t(key), error); state.noticeKey = key; state.noticeError = error; }
-function detailRow(label, value) { $('detail-content').append(create('div', 'detail-label', label), create('div', 'detail-value', value || t('missing'))); }
-
-function updateThemeControl() {
-  const dark = document.documentElement.dataset.theme !== 'light';
-  $('theme-toggle').textContent = t(dark ? 'lightMode' : 'darkMode');
-  $('theme-toggle').setAttribute('aria-label', t(dark ? 'lightMode' : 'darkMode'));
-  $('theme-toggle').setAttribute('aria-pressed', String(dark));
+function projectIdentity(project) { return project.customerCode ? scheduleText('customer', { code: project.customerCode }) : scheduleText('missingCustomer'); }
+function rangeText(start, end) { return (start || scheduleText('unspecified')) + ' → ' + (end || scheduleText('unspecified')); }
+function renderScheduleChrome() {
+  document.documentElement.lang = getScheduleLanguage();
+  document.title = 'PM Studio｜' + scheduleText('title');
+  for (const [id, key] of Object.entries({ 'schedule-title': 'title', 'today-button': 'today', 'legend-production': 'production', 'legend-correction': 'correction', 'pending-title': 'pending', 'page-footer': 'footer', 'retry': 'retry', 'preview-note': 'preview' })) scheduleElement(id).textContent = scheduleText(key);
+  scheduleElement('previous').setAttribute('aria-label', scheduleText('previous'));
+  scheduleElement('next').setAttribute('aria-label', scheduleText('next'));
+  scheduleElement('timeline-viewport').setAttribute('aria-label', scheduleText('timeline'));
+  const language = scheduleElement('language-toggle');
+  language.textContent = getScheduleLanguage() === 'en' ? '繁體中文' : 'English';
+  language.setAttribute('lang', getScheduleLanguage() === 'en' ? 'zh-Hant' : 'en');
+  language.setAttribute('aria-label', getScheduleLanguage() === 'en' ? '切換至繁體中文' : 'Switch to English');
+  for (const id of ['previous', 'next', 'today-button']) scheduleElement(id).disabled = !scheduleState.payload;
+  renderScheduleNotice();
 }
-
-function renderSyncStatus() {
-  if (state.loading) { $('sync-status').textContent = t('loading'); return; }
-  if (!state.payload) { $('sync-status').textContent = t(state.stale && APP_VIEW === 'public' ? 'notLoadedPublic' : state.stale ? 'notLoaded' : 'loading'); return; }
-  $('sync-status').textContent = APP_TRANSPORT === 'static'
-    ? `${t(state.stale ? 'previousPublished' : 'lastPublished')} · ${syncTimeLabel(state.payload.syncedAt)}`
-    : state.stale ? t('notLoaded') : state.payload.syncedAt ? `${t('updated')} · ${syncTimeLabel(state.payload.syncedAt)}` : t('loaded');
+function renderScheduleNotice() {
+  const notice = scheduleElement('load-notice');
+  let key = null;
+  if (scheduleState.loading) key = 'loading';
+  else if (scheduleState.failed) key = scheduleState.payload ? 'staleError' : 'loadError';
+  else if (scheduleState.payload?.warnings.length) key = 'warning';
+  else if (scheduleState.payload && !scheduleState.payload.projects.length) key = 'empty';
+  notice.hidden = !key;
+  notice.classList.toggle('error', scheduleState.failed && !scheduleState.loading);
+  notice.classList.toggle('warning', key === 'warning');
+  scheduleElement('load-message').textContent = key ? scheduleText(key) : '';
+  scheduleElement('retry').hidden = !scheduleState.failed;
+  scheduleElement('retry').disabled = scheduleState.loading;
+  const payload = scheduleState.payload;
+  scheduleElement('sync-status').textContent = payload ? scheduleText(scheduleState.failed ? 'stale' : 'loaded') + ' · ' + scheduleReadTime(payload.syncedAt) + ' (UTC+8)' : '';
 }
-
-async function load() {
-  if (state.loading) return;
-  state.loading = true;
-  $('refresh').disabled = true;
-  renderSyncStatus();
-  try {
-    const payload = normalizePayload(await callGoogle('getTimeline'));
-    const followToday = state.start === today;
-    if (dayNumber(payload.today) !== null) { today = payload.today; if (followToday) state.start = today; }
-    state.payload = payload;
-    state.stale = false;
-    state.loading = false;
-    if (APP_TRANSPORT === 'static' && !payload.projects.length) notifyLocalized('noPublicProjects');
-    else notify(payload.warnings?.length ? payload.warnings.join('；') : '');
-    render();
-  } catch (error) {
-    state.stale = true;
-    state.loading = false;
-    if (APP_VIEW === 'public') notifyLocalized(state.payload ? 'publicReloadError' : 'publicLoadError', true);
-    else notify(error.message, true);
-    renderSyncStatus();
-  } finally { state.loading = false; $('refresh').disabled = false; }
-}
-
-function render(preserveScroll = false) {
-  if (!state.payload) return;
-  $('view-label').textContent = t(state.payload.preview ? 'previewView' : APP_VIEW === 'public' ? 'publicView' : 'teamView');
-  $('mode-description').textContent = t(state.payload.preview ? 'previewDescription' : APP_VIEW === 'public' ? 'publicDescription' : 'teamDescription');
-  renderSyncStatus();
-  const source = $('source-link');
-  if (source) { source.hidden = !state.payload.sourceUrl; if (state.payload.sourceUrl) source.href = state.payload.sourceUrl; }
-  $('month-view').setAttribute('aria-pressed', String(state.zoom === 'month'));
-  $('week-view').setAttribute('aria-pressed', String(state.zoom === 'week'));
-  $('past-toggle').setAttribute('aria-pressed', String(state.pastExpanded));
-  $('past-toggle').textContent = t(state.pastExpanded ? 'collapsePast' : 'expandPast');
-  renderTimeline(preserveScroll);
-  renderPending();
-}
-
-function renderPending() {
-  const projects = state.payload.projects.filter(matchProject);
-  const plan = planBlocks(projects, workspaces());
-  const reasons = new Map();
-  for (const item of [...plan.pending, ...plan.unassigned]) { if (!reasons.has(item.projectId)) reasons.set(item.projectId, new Set()); reasons.get(item.projectId).add(item.reason); }
-  const pending = projects.filter((project) => reasons.has(project.id)).sort((a, b) => (dayNumber(a.start) ?? Infinity) - (dayNumber(b.start) ?? Infinity) || a.id.localeCompare(b.id));
-  $('pending-section').hidden = !pending.length;
-  $('pending-count').textContent = t('projectCount', { count: pending.length });
-  const wrapper = $('pending-projects'); wrapper.replaceChildren();
-  for (const project of pending) {
-    const card = create('button', 'pending-card'); card.type = 'button';
-    card.append(create('span', 'pending-heading', APP_VIEW === 'public' ? project.alias : `${project.id} · ${project.name || t('unnamed')}`), create('span', 'pending-goal', project.goal || t('productionSchedule')));
-    card.append(create('span', 'pending-meta', `${dateText(project.start)} → ${dateText(project.end)} · ${[...reasons.get(project.id)].map(pendingReasonText).join('；')}`));
-    card.addEventListener('click', () => openProject(project)); wrapper.append(card);
+function renderSchedulePending() {
+  const projects = scheduleState.payload.projects.map((project) => ({ project, reasons: projectPendingReasons(project) })).filter((item) => item.reasons.length);
+  scheduleElement('pending-section').hidden = !projects.length;
+  scheduleElement('pending-count').textContent = String(projects.length);
+  const target = scheduleElement('pending-projects');
+  target.replaceChildren();
+  for (const { project, reasons } of projects) {
+    const card = scheduleNode('article', 'pending-card');
+    const title = scheduleNode('div', 'card-heading');
+    title.append(scheduleNode('span', 'card-id', project.id), scheduleNode('span', 'customer-code', projectIdentity(project)));
+    card.append(title, scheduleNode('p', 'pending-reason', reasons.map((reason) => scheduleText(reason)).join(' · ')));
+    card.append(scheduleNode('p', 'pending-dates', scheduleText('production') + ' ' + rangeText(project.start, project.end)));
+    if (project.correctionStart || project.correctionEnd || reasons.includes('correction-dates')) card.append(scheduleNode('p', 'pending-dates', scheduleText('correction') + ' ' + rangeText(project.correctionStart, project.correctionEnd)));
+    target.append(card);
   }
 }
-
-$('theme-toggle').addEventListener('click', () => {
-  const theme = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
-  document.documentElement.dataset.theme = theme;
-  try { localStorage.setItem('pm-studio-theme', theme); } catch { /* The view still switches when preferences cannot be stored. */ }
-  updateThemeControl();
+function renderScheduleTimeline(preserveScroll = false) {
+  const viewport = scheduleElement('timeline-viewport');
+  const savedScroll = preserveScroll ? viewport.scrollLeft : 0;
+  const { payload, firstDay } = scheduleState;
+  const layout = buildTimelineLayout(payload.projects, payload.workspaces, firstDay);
+  scheduleState.layout = layout;
+  scheduleElement('timeline-grid').hidden = false;
+  const canvas = scheduleElement('timeline-canvas');
+  canvas.replaceChildren();
+  canvas.style.width = layout.width + 'px'; canvas.style.height = layout.height + 'px';
+  const labels = scheduleElement('workspace-labels');
+  labels.replaceChildren(scheduleNode('div', 'label-axis', scheduleText('workspace')));
+  let monthStart = firstDay;
+  for (let index = 0; index < TIMELINE_DAYS; index++) {
+    const day = firstDay + index;
+    const date = new Date(day * 86400000);
+    const weekday = date.getUTCDay();
+    const grid = scheduleNode('div', 'grid-day' + ([0, 6].includes(weekday) ? ' weekend' : '') + (weekday === 1 ? ' week-start' : ''));
+    grid.style.left = index * TIMELINE_DAY_WIDTH + 'px'; grid.style.width = TIMELINE_DAY_WIDTH + 'px'; canvas.append(grid);
+    if (weekday === 1 || date.getUTCDate() === 1) {
+      const label = scheduleNode('span', 'day-label', String(date.getUTCDate()));
+      label.style.left = index * TIMELINE_DAY_WIDTH + 'px'; label.style.width = TIMELINE_DAY_WIDTH + 'px'; canvas.append(label);
+    }
+    const nextDate = new Date((day + 1) * 86400000);
+    if (nextDate.getUTCDate() === 1 || index === TIMELINE_DAYS - 1) {
+      const month = scheduleNode('div', 'month-label', scheduleMonth(monthStart));
+      month.style.left = (monthStart - firstDay) * TIMELINE_DAY_WIDTH + 'px';
+      month.style.width = (day - monthStart + 1) * TIMELINE_DAY_WIDTH + 'px'; canvas.append(month);
+      monthStart = day + 1;
+    }
+  }
+  for (const row of layout.rows) {
+    const label = scheduleNode('div', 'workspace-label'); label.style.height = row.height + 'px';
+    label.append(scheduleNode('span', 'workspace-letter', row.workspace.id), scheduleNode('span', 'workspace-description', workspaceText(row.workspace.id))); labels.append(label);
+    const rule = scheduleNode('div', 'row-rule'); rule.style.top = row.top + row.height + 'px'; canvas.append(rule);
+    if (!row.blocks.length) { const empty = scheduleNode('span', 'empty-row', scheduleText('noWork')); empty.style.top = row.top + 43 + 'px'; canvas.append(empty); }
+    for (const block of row.blocks) {
+      const project = block.project;
+      const card = scheduleNode('article', 'project-card' + (block.phase === 'correction' ? ' correction' : ''));
+      card.style.left = block.left + 'px'; card.style.top = block.top + 'px'; card.style.width = block.width + 'px';
+      card.setAttribute('tabindex', '0');
+      const identity = project.id + ' · ' + projectIdentity(project);
+      const details = identity + ' · ' + scheduleText(block.phase) + ' · ' + rangeText(block.start, block.end) + ' · ' + scheduleText('workspace') + ' ' + project.workspaceIds.join(' + ');
+      card.setAttribute('aria-label', details); card.setAttribute('title', details);
+      const heading = scheduleNode('div', 'card-heading'); heading.append(scheduleNode('span', 'card-id', project.id), scheduleNode('span', 'customer-code', projectIdentity(project)));
+      card.append(heading, scheduleNode('span', 'card-dates', rangeText(block.start, block.end)), scheduleNode('span', 'card-meta', scheduleText(block.phase) + ' · ' + project.workspaceIds.join(' + ') + ' · ' + String(project.workspaceUnits[row.workspace.id])));
+      canvas.append(card);
+    }
+  }
+  const today = timelineDay(payload.today);
+  if (today >= firstDay && today <= layout.lastDay) {
+    const line = scheduleNode('div', 'today-line'); line.style.left = (today - firstDay) * TIMELINE_DAY_WIDTH + 'px';
+    line.append(scheduleNode('span', 'today-label', scheduleText('today'))); canvas.append(line);
+  }
+  viewport.scrollLeft = savedScroll;
+  updateScheduleRange();
+}
+function updateScheduleRange() {
+  if (!scheduleState.payload) return;
+  const viewport = scheduleElement('timeline-viewport');
+  const first = scheduleState.firstDay + Math.floor(viewport.scrollLeft / TIMELINE_DAY_WIDTH);
+  const last = Math.min(scheduleState.layout.lastDay, first + Math.max(1, Math.floor(viewport.clientWidth / TIMELINE_DAY_WIDTH)) - 1);
+  scheduleElement('date-range').textContent = timelineDate(first) + ' — ' + timelineDate(last);
+  const count = new Set(scheduleState.layout.rows.flatMap((row) => row.blocks).filter((block) => block.first <= last && block.last >= first).map((block) => block.project.id)).size;
+  scheduleElement('visible-count').textContent = scheduleText('visible', { count });
+}
+function renderSchedule(preserveScroll = false) {
+  renderScheduleChrome();
+  if (!scheduleState.payload) return;
+  renderScheduleTimeline(preserveScroll);
+  renderSchedulePending();
+}
+async function loadSchedule() {
+  if (scheduleState.loading) return;
+  scheduleState.loading = true; renderScheduleNotice();
+  try {
+    const payload = normalizeTimelinePayload(await readSchedule());
+    scheduleState.payload = payload;
+    if (scheduleState.firstDay === null) scheduleState.firstDay = timelineDay(payload.today) - 4;
+    scheduleState.failed = false;
+  } catch { scheduleState.failed = true; }
+  finally { scheduleState.loading = false; renderSchedule(true); }
+}
+function shiftSchedule(direction) {
+  if (!scheduleState.payload) return;
+  const viewport = scheduleElement('timeline-viewport');
+  const visibleStart = scheduleState.firstDay + Math.floor(viewport.scrollLeft / TIMELINE_DAY_WIDTH);
+  scheduleState.firstDay = visibleStart + direction * Math.max(7, Math.floor(viewport.clientWidth / TIMELINE_DAY_WIDTH) - 2);
+  renderScheduleTimeline();
+}
+try { setScheduleLanguage(localStorage.getItem('pm-studio-language')); } catch { setScheduleLanguage('zh-Hant'); }
+scheduleElement('language-toggle').addEventListener('click', () => {
+  const language = setScheduleLanguage(getScheduleLanguage() === 'en' ? 'zh-Hant' : 'en');
+  try { localStorage.setItem('pm-studio-language', language); } catch { /* Language still changes when storage is unavailable. */ }
+  renderSchedule(true);
 });
-updateThemeControl();
-initializeLanguage();
-$('refresh').addEventListener('click', load);
-$('month-view').addEventListener('click', () => { state.zoom = 'month'; render(); });
-$('week-view').addEventListener('click', () => { state.zoom = 'week'; render(); });
-$('past-toggle').addEventListener('click', () => { state.pastExpanded = !state.pastExpanded; state.start = state.pastExpanded ? addDays(today, -35) : today; render(); });
-$('today-button').addEventListener('click', () => { state.start = state.pastExpanded ? addDays(today, -14) : today; render(); });
-function shift(days) { state.start = addDays(state.start, days); if (dayNumber(state.start) < dayNumber(today)) state.pastExpanded = true; render(); }
-$('previous').addEventListener('click', () => shift(state.zoom === 'month' ? -28 : -14));
-$('next').addEventListener('click', () => shift(state.zoom === 'month' ? 28 : 14));
-$('search').addEventListener('input', (event) => { state.search = event.target.value.trim(); if (state.payload) { renderTimeline(); renderPending(); } });
-$('timeline-viewport').addEventListener('scroll', () => { if (state.payload) updateDateRange(); }, { passive: true });
-$('timeline-viewport').addEventListener('keydown', (event) => { if (event.key === 'Home') { event.preventDefault(); $('today-button').click(); } });
-let resizeFrame;
-new ResizeObserver(() => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(() => { if (!state.payload) return; if (Math.abs((state.renderedDayWidth || 0) - dayWidth()) > .01) renderTimeline(true); else updateDateRange(); }); }).observe($('timeline-viewport'));
-$('close-dialog').addEventListener('click', () => $('project-dialog').close());
-$('project-dialog').addEventListener('click', (event) => { if (event.target !== $('project-dialog')) return; const rect = $('project-dialog').getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) $('project-dialog').close(); });
-
-await load();
-setInterval(() => {
-  const current = taipeiToday();
-  if (current === today || state.payload?.preview) return;
-  if (APP_TRANSPORT !== 'static') { load(); return; }
-  const followToday = state.start === today;
-  today = current;
-  if (followToday) state.start = today;
-  if (state.payload) { state.payload.today = current; render(); }
-}, 60000);
+scheduleElement('previous').addEventListener('click', () => shiftSchedule(-1));
+scheduleElement('next').addEventListener('click', () => shiftSchedule(1));
+scheduleElement('today-button').addEventListener('click', () => { if (!scheduleState.payload) return; scheduleState.firstDay = timelineDay(scheduleState.payload.today) - 4; renderScheduleTimeline(); });
+scheduleElement('retry').addEventListener('click', loadSchedule);
+scheduleElement('timeline-viewport').addEventListener('scroll', updateScheduleRange, { passive: true });
+scheduleElement('timeline-viewport').addEventListener('keydown', (event) => { if (event.key === 'Home') { event.preventDefault(); scheduleElement('today-button').click(); } });
+new ResizeObserver(updateScheduleRange).observe(scheduleElement('timeline-viewport'));
+renderScheduleChrome();
+await loadSchedule();

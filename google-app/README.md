@@ -1,18 +1,47 @@
-# Google Apps Script applications
+# PM Studio read-only Apps Script
 
-PM Studio is migrating to one source spreadsheet and one Apps Script. Under the new data rules, the `專案列表` sheet holds customer codes and workspace allocations; all projects will be displayed by project ID and customer code, without names or per-project publication approval.
+One Apps Script reads the Google `專案列表` sheet and serves the public schedule. Staff edit the sheet directly under its Google sharing permissions. The website provides no editing, save, publication, or internal-mode operation.
 
-The 2026-10-13 work covers backups and source-sheet consolidation only. The single Script and website migration are pending. The code and deployed applications listed below still implement the previous two-project architecture:
+| File | Purpose |
+| --- | --- |
+| `Code.gs` | Read the source and construct an explicit public field allowlist |
+| `Index.html` | Generated, self-contained schedule interface |
+| `appsscript.json` | V8, Asia/Taipei, Advanced Sheets v4, read-only OAuth scope |
+| `ui/` | Browser bridge, payload validation, and rendering client |
 
-| Application | Backend | Generated interface | Manifest source |
-| --- | --- | --- | --- |
-| Internal | `Code.gs` | `Index.html` | `appsscript.json` |
-| Public | `PublicCode.gs` | `PublicIndex.html` | `public-appsscript.json` |
+The main sheet keeps its header on row 5 and records from row 6. A:Q retain business data. R is `客戶編號`; S:V are `工作區 A 占用`, `工作區 B 占用`, `工作區 C 占用`, and `工作區 D 占用`. The former `對外名稱` column is removed. Customer codes contain codes only; confirmed workspace units are positive integers, while unassigned or uncertain cells stay blank.
 
-The `ui/` directory contains interface contracts, the Apps Script bridge, and view-specific behavior. The build combines these with the shared sources in `web/dist/` and `scripts/timeline-core.mjs` to generate both HTML files.
+## Public contract
 
-The source sheet retains A:Q. Its former R column `對外名稱` is removed; R:V now define `客戶編號`, `工作區 A 占用`, `工作區 B 占用`, `工作區 C 占用`, and `工作區 D 占用`. Maintain confirmed allocations in the source sheet, not through the old website's save operation. The old reader does not consume R:V, so refreshing the old site does not synchronize these new allocations. Customer codes must contain codes only; the existing customer-name field stays private.
+`getTimeline()` accepts no arguments. `doGet` accepts no query, path, or mode parameters. All helper functions end in `_` so they cannot be invoked through the browser bridge. There is no write endpoint.
 
-Read the [web development and deployment guide](../.agents/web-development.md) before changing or deploying an application. It distinguishes the new data rules from the legacy contracts retained for maintenance. Removing `對外名稱` makes the old publication operation unsuitable for new releases; do not recreate the field to satisfy that operation.
+The response has exactly these schema 2 fields:
 
-The existing GitHub Pages frontend still reads `public/data/schedule.json`. Its [legacy release guide](../.agents/public-site.md) remains a maintenance reference, not evidence that the new architecture is deployed. This migration step changes neither the code nor the live websites.
+```text
+schemaVersion: 2
+today, syncedAt
+projects: [{ id, customerCode, start, end, correctionStart, correctionEnd,
+             workspaceIds, workspaceUnits, pendingReasons }]
+workspaces: [{ id, name, usualLoad? }]
+warnings
+```
+
+Project IDs use the confirmed `C`, `BG`, `P`, `D`, or `O` prefix and at least three digits; customer codes use uppercase letters, a hyphen, and digits. Names, real delivery goals, status, notes, source links, original-row objects, and private settings are excluded on the server. Original dates may supply the current schedule only under the documented fallback rule; no separate original-date fields are returned.
+
+Pending reasons are fixed codes: `no-workspace`, `workspace-values`, `production-dates`, `correction-dates`, and `customer-code`. Source warnings are `project-id-missing` and `project-id-invalid`; invalid identifiers are not echoed. Duplicate project IDs reject the read. Service failures return one generic message rather than private service details.
+
+Incomplete dates and assignments keep valid projects in the response. The interface shows a continuous timeline with earlier/later dates, today, Chinese/English, correction periods, and a pending list. It has no search, details editor, or workspace save. A/B usual load of 2 is a reminder, not a capacity limit.
+
+## Build and configure
+
+```sh
+node scripts/build-google-ui.mjs
+node scripts/serve-google-preview.mjs
+node --test google-app/tests/*.test.mjs
+```
+
+Build from the repository root; edit `web/dist/` and `ui/`, then regenerate `Index.html`. The package `local/google-app-bundle/single/` contains only `Code.gs`, `Index.html`, and `appsscript.json`. Preview records at `http://127.0.0.1:4318/` are fictional and never written to Google.
+
+Configure exactly one Script property, `SOURCE_SHEET_ID`, with the private main-sheet ID. Enable Advanced Sheets v4; the only OAuth scope is `https://www.googleapis.com/auth/spreadsheets.readonly`. Deploy as `USER_DEPLOYING` with `ANYONE_ANONYMOUS` access. The deployment account needs read access to the source; visitors receive only the allowlisted response. `doGet` permits iframe embedding for the Pages entry.
+
+Read the [deployment guide](../.agents/web-development.md) before changing a deployment and the [Pages guide](../.agents/public-site.md) before publishing its entry. Actual source IDs, execution URLs, credentials, and deployment status belong only in ignored private operation records. Local builds do not prove live deployment.

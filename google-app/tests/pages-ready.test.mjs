@@ -51,13 +51,15 @@ test('manual publication accepts only the public original repository on main', (
   }
 });
 
-test('Pages workflow is manual, builds an approved snapshot and publishes only its own artifact', () => {
+test('Pages workflow is manual, injects the Script URL from a secret and publishes only its own entrypoint', () => {
   const triggers = workflow.match(/^on:\r?\n([\s\S]*?)^permissions:/m)?.[1];
   assert.ok(triggers);
   assert.deepEqual([...triggers.matchAll(/^  (\w+):/gm)].map((match) => match[1]), ['workflow_dispatch']);
   assert.doesNotMatch(workflow, /pull_request_target|schedule:|git push|ghpages|CNAME|repository:/);
   assert.match(workflow, /node-version: "24"/);
-  assert.match(workflow, /node scripts\/build-public-site\.mjs --snapshot public\/data\/schedule\.json/);
+  assert.match(workflow, /PM_STUDIO_APP_URL: \$\{\{ secrets\.PM_STUDIO_APP_URL \}\}/);
+  assert.match(workflow, /run: node scripts\/build-public-site\.mjs\r?\n/);
+  assert.doesNotMatch(workflow, /--snapshot|schedule\.json|script\.google\.com|PM_STUDIO_APP_URL.*(?:echo|console\.log)/);
   assert.match(workflow, /path: local\/public-site\r?\n/);
   const guardAt = workflow.indexOf('Verify publishing prerequisites');
   const testsAt = workflow.indexOf('node --test ');

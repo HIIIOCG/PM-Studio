@@ -2,307 +2,235 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
-import { createHash } from 'node:crypto';
-import { getProjectDates, parseDay } from '../../scripts/timeline-core.mjs';
 
-const internalCode = await readFile(new URL('../Code.gs', import.meta.url), 'utf8');
-const publicCode = await readFile(new URL('../PublicCode.gs', import.meta.url), 'utf8');
-const sourceId = 'MASTER_1234';
-const settingsId = 'SETTINGS_1234';
-const feedId = 'FEED_1234';
+const code = await readFile(new URL('../Code.gs', import.meta.url), 'utf8');
+const SOURCE_ID = 'FICTIONAL_SOURCE_1234';
+const PUBLIC_ERROR = '排程目前無法讀取，請稍後重試。';
 const header = ['案號', '目前交付目標', '專案／範圍', '客戶', '負責人', '狀態', '原始開始', '原始結束',
-  '延長修正／補充', '交付步驟（參考）', '資料', '窗口', '執行者', '目前排程開始', '目前排程結束', '修正開始', '修正結束', '對外名稱'];
-const sourceRow = ['C-001', 'SecretPerson 的模型', 'PrivateProject｜一角色', 'PrivateCustomer', 'SecretPerson', '進行中',
-  '2026-12-01', '2027-01-31', '', '', '附件', '', '', '', '', '', '', '專案 001'];
-const layoutHeader = ['projectId', 'workspaceIds', 'workspaceUnits', 'updatedAt'];
-const approvalHeader = ['projectId', 'approved', 'alias', 'approvedGoal', 'scheduleStart', 'scheduleEnd', 'approvedRevision'];
-const feedHeader = ['alias', 'approvedGoal', 'scheduleStart', 'scheduleEnd', 'workspaceIds', 'workspaceUnits'];
-const safeRow = ['專案 001', '模型製作', '2026-12-01', '2027-01-31', '["A"]', '{"A":1}'];
+  '延長修正／補充', '交付步驟（參考）', '資料', '窗口', '執行者', '目前排程開始', '目前排程結束',
+  '修正開始', '修正結束', '客戶編號', '工作區 A 占用', '工作區 B 占用', '工作區 C 占用', '工作區 D 占用'];
+const defaults = {
+  '案號': 'C-001', '目前交付目標': 'SecretGoal', '專案／範圍': 'SecretProject', '客戶': 'SecretCustomer',
+  '負責人': 'SecretOwner', '執行者': 'SecretExecutor', '窗口': 'SecretContact',
+  '資料': 'https://private.example/source', '交付步驟（參考）': 'SecretDelivery',
+  '狀態': '製作中', '客戶編號': 'V-01', '原始開始': '2026-01-01', '原始結束': '2026-02-28',
+  '目前排程開始': '2026-12-01', '目前排程結束': '2027-01-31', '工作區 A 占用': '1'
+};
 const plain = value => JSON.parse(JSON.stringify(value));
+const row = (changes = {}, columns = header) => columns.map(label => ({ ...defaults, ...changes })[label] ?? '');
+const fixedDate = class extends Date {
+  constructor(...args) { super(...(args.length ? args : ['2026-10-12T16:30:00.000Z'])); }
+};
 
-class Sheet {
-  constructor(name, values, state) { this.name = name; this.values = structuredClone(values); this.state = state; this.maxRows = 1000; this.writable = true; }
-  getName() { return this.name; }
-  getMaxRows() { return this.maxRows; }
-  getLastRow() { return this.values.findLastIndex(row => row?.some(value => value !== '' && value != null)) + 1; }
-  getLastColumn() { return Math.max(0, ...this.values.map(row => row.findLastIndex(value => value !== '' && value != null) + 1)); }
-  getRange(row, col, height, width) {
-    const sheet = this;
-    const read = () => Array.from({ length: height }, (_, y) => Array.from({ length: width }, (_, x) => sheet.values[row + y - 1]?.[col + x - 1] ?? ''));
-    return {
-      getDisplayValues() { sheet.state.reads.push({ sheet: sheet.name, row, col, height, width }); return read().map(r => r.map(v => String(v))); },
-      getFormulas() { return read().map(r => r.map(v => typeof v === 'string' && v.startsWith('=') ? v : '')); },
-      getRichTextValues() { return read().map(r => r.map(() => ({ getLinkUrl: () => 'https://private.example/source', getRuns: () => [] }))); },
-      setValues(values) {
-        if (!sheet.writable) throw new Error('Google ACL write denied: private-sheet-id');
-        assert.equal(values.length, height); assert.ok(values.every(r => r.length === width));
-        sheet.state.writes.push({ sheet: sheet.name, row, col, height, width });
-        values.forEach((r, y) => r.forEach((value, x) => { sheet.values[row + y - 1] ??= []; sheet.values[row + y - 1][col + x - 1] = value; }));
-        return this;
-      },
-      clearNote() { sheet.state.notesCleared.push(sheet.name); return this; }
-    };
-  }
-}
-
-function setup(kind = 'internal', options = {}) {
-  const state = { opens: [], reads: [], writes: [], notesCleared: [], folders: [], locks: 0, releases: 0 };
-  const master = new Sheet('專案列表', [[], [], [], [], header, sourceRow], state);
-  const layout = new Sheet('工作區安排', [layoutHeader], state);
-  const approval = new Sheet('公開設定', [approvalHeader], state);
-  const feed = new Sheet('匿名排程', [feedHeader, ...(options.feedRows || [])], state);
-  if (options.assigned) layout.values.push(['C-001', '["A"]', '{"A":1}', '2026-10-12T00:00:00Z']);
-  const sheets = new Map([
-    [sourceId, [master]], [settingsId, [layout, approval]], [feedId, [feed]]
-  ]);
-  const props = kind === 'public' ? { PUBLIC_FEED_SHEET_ID: feedId } : {
-    INTERNAL_FOLDER_ID: 'FOLDER_1234', INTERNAL_SHEET_ID: sourceId, SETTINGS_SHEET_ID: settingsId, PUBLIC_FEED_SHEET_ID: feedId,
-    ...(options.publisher ? { PUBLISHERS_JSON: '["worker@example.test"]' } : {})
-  };
-  Object.assign(props, options.properties);
-  const email = options.email ?? 'worker@example.test';
+function setup(options = {}) {
+  const state = { reads: [] };
+  const rows = options.values ?? [[], [], [], [], options.header ?? header, ...(options.rows ?? [row()])];
+  const properties = options.properties ?? { SOURCE_SHEET_ID: SOURCE_ID };
   const context = vm.createContext({
-    PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ ...props }) }) },
-    Session: { getActiveUser: () => ({ getEmail: () => email }), getEffectiveUser: () => ({ getEmail: () => options.effectiveEmail ?? email }) },
-    DriveApp: { getFolderById(id) { state.folders.push(id); if (options.folderDenied) throw new Error('ACL'); return { getName: () => 'PM folder' }; } },
-    SpreadsheetApp: {
-      openById(id) {
-        state.opens.push(id);
-        if (options.deniedIds?.includes(id) || !sheets.has(id)) throw new Error('private exception ' + id);
-        return { getSheetByName: name => sheets.get(id).find(sheet => sheet.name === name) || null, getSheets: () => sheets.get(id) };
-      }, flush() {}
-    },
-    LockService: { getScriptLock: () => ({ tryLock() { state.locks++; return !options.lockDenied; }, releaseLock() { state.releases++; } }) },
+    Date: fixedDate,
+    PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ ...properties }) }) },
+    Sheets: { Spreadsheets: { Values: {
+      get(id, range, settings) {
+        state.reads.push({ id, range, settings: plain(settings) });
+        if (options.readError) throw new Error('SecretCustomer ' + SOURCE_ID + ' https://private.example/error');
+        return options.response ?? { values: rows };
+      }
+    } } },
     Utilities: {
-      DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
-      computeDigest: (_, value) => [...createHash('sha256').update(value).digest()],
-      formatDate: date => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
+      formatDate(date, timezone, format) {
+        assert.equal(timezone, 'Asia/Taipei'); assert.equal(format, 'yyyy-MM-dd');
+        return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+      }
     },
-    HtmlService: { createHtmlOutputFromFile: file => ({ file, setTitle() { return this; } }) }
+    HtmlService: {
+      XFrameOptionsMode: { ALLOWALL: 'ALLOWALL' },
+      createHtmlOutputFromFile(file) {
+        if (options.htmlError) throw new Error('Secret HTML failure');
+        return { file, setTitle(value) { this.title = value; return this; },
+          addMetaTag(name, content) { this.meta = { name, content }; return this; },
+          setXFrameOptionsMode(value) { this.frame = value; return this; } };
+      }
+    }
   });
-  vm.runInContext(kind === 'public' ? publicCode : internalCode, context);
-  // Match the documented google.script.run boundary, including private helpers.
+  vm.runInContext(code, context);
   const rpc = (name, ...args) => {
     if (name.endsWith('_') || typeof context[name] !== 'function') throw new Error('RPC unavailable');
     return context[name](...args);
   };
-  return { context, rpc, state, props, master, layout, approval, feed, sheets };
+  return { context, rpc, state, rows };
 }
+const project = changes => plain(setup({ rows: [row(changes)] }).rpc('getTimeline').projects[0]);
+const hasReason = (item, reason) => assert.ok(item.pendingReasons.includes(reason));
 
-function inputFor(env, workspaceIds = ['A'], workspaceUnits = { A: 1 }) {
-  return { assignments: { 'C-001': workspaceIds }, allocations: { 'C-001': workspaceUnits }, revision: env.rpc('getTimeline').revision };
-}
-
-function approvalFor(env) {
-  return { revision: env.rpc('getTimeline').revision, approvals: [{ projectId: 'C-001', approved: true, alias: '專案 001',
-    approvedGoal: '模型製作', scheduleStart: '2026-12-01', scheduleEnd: '2027-01-31', workspaceIds: ['A'], workspaceUnits: { A: 1 } }] };
-}
-
-test('all internal RPCs deny anonymous users before touching private resources', () => {
-  const env = setup('internal', { email: '' });
-  for (const [name, arg] of [['doGet', {}], ['getTimeline'], ['saveLayout', {}], ['publishApprovedSnapshot', {}]]) {
-    assert.throws(() => env.rpc(name, ...(arg ? [arg] : [])), /Google/);
-  }
-  assert.deepEqual(env.state.opens, []); assert.deepEqual(env.state.folders, []); assert.deepEqual(env.state.writes, []);
-});
-
-test('internal execute-as-owner mismatch denies; existing folder and file ACLs remain the authority', () => {
-  assert.throws(() => setup('internal', { effectiveEmail: 'owner@example.test' }).rpc('getTimeline'), /Google/);
-  const deniedFolder = setup('internal', { folderDenied: true });
-  assert.throws(() => deniedFolder.rpc('getTimeline'), /資料夾/); assert.deepEqual(deniedFolder.state.opens, []);
-  const deniedSheet = setup('internal', { deniedIds: [settingsId] });
-  assert.throws(() => deniedSheet.rpc('getTimeline'), /讀取權限/);
-  const coworker = setup('internal', { email: 'other-company-member@example.test' });
-  assert.equal(coworker.rpc('getTimeline').mode, 'internal'); // No extra employee allowlist.
-});
-
-test('internal headers are dynamic, month precision stays pending, and missing resources stay empty', () => {
+test('single read uses formatted source values and returns only the exact public contract', () => {
   const env = setup();
-  const reverse = header.map((_, i) => header.length - 1 - i);
-  env.master.values[4] = reverse.map(i => header[i]);
-  const row = [...sourceRow]; row[6] = '2026-12';
-  env.master.values[5] = reverse.map(i => row[i]);
-  const payload = env.rpc('getTimeline');
-  assert.equal(payload.projects[0].originalStart, '2026-12'); assert.equal(payload.projects[0].start, '');
-  assert.deepEqual(plain(payload.projects[0].workspaceIds), []); assert.equal(payload.warnings.length, 1);
-  assert.equal(payload.projects[0].owner, 'SecretPerson'); assert.equal(payload.projects[0].executor, '');
-  assert.deepEqual(plain(payload.projects[0].sourceLinks), ['https://private.example/source']);
-  assert.throws(() => env.rpc('getTimeline', { mode: 'public' }), /參數/);
-  assert.throws(() => env.rpc('doGet', { parameter: { mode: 'public' } }), /參數/);
+  const payload = plain(env.rpc('getTimeline'));
+  assert.deepEqual(Object.keys(payload).sort(), ['schemaVersion', 'today', 'syncedAt', 'projects', 'workspaces', 'warnings'].sort());
+  assert.equal(payload.schemaVersion, 2);
+  assert.equal(payload.today, '2026-10-13');
+  assert.equal(payload.syncedAt, '2026-10-12T16:30:00.000Z');
+  assert.deepEqual(env.state.reads, [{ id: SOURCE_ID, range: "'專案列表'", settings: { majorDimension: 'ROWS', valueRenderOption: 'FORMATTED_VALUE' } }]);
+  assert.deepEqual(payload.projects[0], {
+    id: 'C-001', customerCode: 'V-01', start: '2026-12-01', end: '2027-01-31', correctionStart: '', correctionEnd: '',
+    workspaceIds: ['A'], workspaceUnits: { A: 1 }, pendingReasons: []
+  });
+  assert.doesNotMatch(JSON.stringify(payload), /Secret|private\.example|FICTIONAL_SOURCE|sourceUrl|externalAlias|approved|originalStart/);
 });
 
-test('extracted date rules match timeline core: leap dates, partial/inverted dates and reschedule fallback', () => {
-  const { context } = setup();
-  for (const value of ['2024-02-29', '2026-02-29', '2026-13-01', '2026-02', '2026-2-01', '2027-01-01']) {
-    assert.equal(context.parseDay_(value), parseDay(value));
-  }
-  for (const item of [
-    { originalStart: '2026-12-01', originalEnd: '2027-01-31' },
-    { originalStart: '2026-12-01', originalEnd: '2027-01-31', supplement: '改期，日期待定' },
-    { start: '2027-01-01', end: '2027-01-31', supplement: '原期後持續修正；新終點待定' },
-    { start: '2026-12', end: '2027-01' },
-    { start: '2027-01-31', end: '2026-12-01' },
-    { start: '2027-01-01', originalStart: '2026-12-01', originalEnd: '2027-01-31' }
-  ]) assert.deepEqual(plain(context.getProjectDates_(item)), getProjectDates(item));
+test('all 24 fictional projects remain present across statuses, missing dates and unassigned workspaces', () => {
+  const rows = Array.from({ length: 24 }, (_, index) => row({
+    '案號': ['C', 'BG', 'P', 'D', 'O'][index % 5] + '-' + String(index + 1).padStart(3, '0'),
+    '狀態': ['製作中', '已出檔', '已交付', '取消', '結案'][index % 5],
+    ...(index % 6 === 0 ? { '工作區 A 占用': '' } : {}),
+    ...(index % 4 === 0 ? { '目前排程開始': '2027-04', '目前排程結束': '待確認' } : {})
+  }));
+  const payload = plain(setup({ rows }).rpc('getTimeline'));
+  assert.equal(payload.projects.length, 24);
+  assert.equal(new Set(payload.projects.map(item => item.id)).size, 24);
+  assert.equal(payload.projects.filter(item => item.pendingReasons.includes('no-workspace')).length, 4);
+  assert.equal(payload.projects.filter(item => item.pendingReasons.includes('production-dates')).length, 6);
 });
 
-test('layout updates preserve confirmed extra A/B characters and C/D units without fixed capacity', () => {
-  const env = setup();
-  const result = env.rpc('saveLayout', inputFor(env, ['D', 'B', 'A', 'C'], { D: 3, B: 4, A: 3, C: 5 }));
-  assert.deepEqual(plain(result.projects[0].workspaceIds), ['A', 'B', 'C', 'D']);
-  assert.deepEqual(plain(result.projects[0].workspaceUnits), { A: 3, B: 4, C: 5, D: 3 });
-  assert.deepEqual(plain(env.rpc('getTimeline').projects[0].workspaceUnits), { A: 3, B: 4, C: 5, D: 3 });
-  assert.deepEqual(plain(result.workspaces.map(workspace => workspace.capacity)), [null, null, null, null]);
-  assert.deepEqual(plain(result.workspaces.filter(workspace => workspace.usualLoad).map(workspace => [workspace.id, workspace.usualLoad])), [['A', 2], ['B', 2]]);
-  assert.equal(result.workspaces.find(workspace => workspace.id === 'C').name, '角色與場景模型');
-  assert.deepEqual(env.state.writes.map(write => write.sheet), ['工作區安排']);
-  assert.equal(env.state.releases, 1); assert.ok(env.state.notesCleared.includes('工作區安排'));
+test('private values injected into every source column are never reflected outside the allowlist', () => {
+  const changes = Object.fromEntries(header.map(label => [label, 'Secret-' + label + '@private.example']));
+  changes['案號'] = 'C-001';
+  const payload = plain(setup({ rows: [row(changes)] }).rpc('getTimeline'));
+  assert.equal(payload.projects.length, 1);
+  assert.doesNotMatch(JSON.stringify(payload), /Secret|private|目前|客戶|修正|https|@/);
+  assert.equal(payload.projects[0].customerCode, '');
+  assert.equal(payload.projects[0].start, '');
+  assert.equal(payload.projects[0].end, '');
+  assert.equal(payload.projects[0].correctionStart, '');
+  assert.deepEqual(payload.projects[0].workspaceUnits, {});
+  assert.deepEqual(new Set(payload.projects[0].pendingReasons), new Set(['customer-code', 'production-dates', 'correction-dates', 'workspace-values', 'no-workspace']));
 });
 
-test('invalid workspace, units, unknown project and surplus request fields do not write', () => {
-  const cases = [
-    env => inputFor(env, ['A'], { A: 1001 }), env => inputFor(env, ['Z'], { Z: 1 }),
-    env => inputFor(env, ['A', 'A'], { A: 1 }), env => inputFor(env, ['A'], { A: 0 }),
-    env => inputFor(env, ['A'], { A: 1, B: 1 }),
-    env => ({ ...inputFor(env), mode: 'public' }),
-    env => ({ ...inputFor(env), assignments: { 'C-999': ['A'] }, allocations: { 'C-999': { A: 1 } } }),
-    env => ({ ...inputFor(env), allocations: { 'C-001': { A: 1 }, 'C-999': {} } })
-  ];
-  for (const make of cases) {
-    const env = setup(); assert.throws(() => env.rpc('saveLayout', make(env))); assert.deepEqual(env.state.writes, []);
+test('customer codes retain leading zeroes and invalid or missing codes stay pending', () => {
+  assert.equal(project({ '客戶編號': 'ABC-0003' }).customerCode, 'ABC-0003');
+  for (const value of ['', 'V-01 SecretCustomer', 'v-01', 'V-01@example.test', '=V-01', '<script>']) {
+    const item = project({ '客戶編號': value });
+    assert.equal(item.customerCode, ''); hasReason(item, 'customer-code');
   }
 });
 
-test('all workspace unit counts keep a technical integer bound independent of usual load', () => {
-  for (const area of ['A', 'B', 'C', 'D']) {
-    for (const units of [-1, 0, 1.5, 1001, '3']) {
-      const env = setup();
-      assert.throws(() => env.rpc('saveLayout', inputFor(env, [area], { [area]: units })), /數量/);
-      assert.deepEqual(env.state.writes, []);
-    }
+test('only two empty current dates without rescheduling clues permit original-date fallback', () => {
+  const original = project({ '目前排程開始': '', '目前排程結束': '' });
+  assert.equal(original.start, '2026-01-01'); assert.equal(original.end, '2026-02-28');
+  for (const note of ['改期，日期待定', '延期', '延長', '尚未確認排程', '日期待確認']) {
+    const item = project({ '目前排程開始': '', '目前排程結束': '', '延長修正／補充': note });
+    assert.equal(item.start, ''); assert.equal(item.end, ''); hasReason(item, 'production-dates');
+  }
+  const partial = project({ '目前排程開始': '2027-02', '目前排程結束': '' });
+  assert.equal(partial.start, '2027-02'); assert.equal(partial.end, ''); hasReason(partial, 'production-dates');
+  const explicitUnknown = project({ '目前排程開始': '待確認', '目前排程結束': '' });
+  assert.equal(explicitUnknown.start, ''); assert.equal(explicitUnknown.end, '');
+});
+
+test('source date precision, invalid calendar days and inverted ranges are preserved without invented dates', () => {
+  for (const [start, end] of [['2027-02', '2027-03'], ['2026-02-29', '2026-03-01'], ['2027-13-01', '2027-14-01'], ['2027-02-02', '2027-01-01']]) {
+    const item = project({ '目前排程開始': start, '目前排程結束': end });
+    assert.equal(item.start, start); assert.equal(item.end, end); hasReason(item, 'production-dates');
+  }
+  const locale = project({ '目前排程開始': '2026/12/1', '目前排程結束': 'SecretCustomer' });
+  assert.equal(locale.start, ''); assert.equal(locale.end, ''); hasReason(locale, 'production-dates');
+  const leap = project({ '目前排程開始': '2028-02-29', '目前排程結束': '2028-03-01' });
+  assert.ok(!leap.pendingReasons.includes('production-dates'));
+});
+
+test('correction periods and pending notes stay distinct from an existing production schedule', () => {
+  const full = project({ '修正開始': '2027-02-01', '修正結束': '2027-02-10' });
+  assert.equal(full.start, '2026-12-01'); assert.equal(full.correctionStart, '2027-02-01');
+  assert.ok(!full.pendingReasons.includes('correction-dates'));
+  for (const [start, end] of [['2027-02', ''], ['2027-03-10', '2027-03-01'], ['SecretCustomer', '']]) {
+    const item = project({ '修正開始': start, '修正結束': end });
+    hasReason(item, 'correction-dates'); assert.equal(item.start, '2026-12-01');
+  }
+  const unknown = project({ '延長修正／補充': '原期後持續修正；新終點待定 SecretCustomer' });
+  hasReason(unknown, 'correction-dates');
+  assert.equal(unknown.start, '2026-12-01');
+  assert.doesNotMatch(JSON.stringify(unknown), /SecretCustomer|原期後/);
+  const historical = project({ '延長修正／補充': '修正已完成' });
+  assert.ok(!historical.pendingReasons.includes('correction-dates'));
+});
+
+test('A/B usual load does not cap extra characters and C/D are not assigned by project prefix', () => {
+  const item = project({ '案號': 'O-001', '工作區 A 占用': '5', '工作區 B 占用': '7', '工作區 C 占用': '3', '工作區 D 占用': '' });
+  assert.deepEqual(item.workspaceUnits, { A: 5, B: 7, C: 3 });
+  assert.deepEqual(item.workspaceIds, ['A', 'B', 'C']);
+  assert.deepEqual(item.pendingReasons, []);
+  const payload = plain(setup().rpc('getTimeline'));
+  assert.deepEqual(payload.workspaces.map(item => item.usualLoad ?? null), [2, 2, null, null]);
+  assert.ok(payload.workspaces.every(item => !('capacity' in item)));
+});
+
+test('invalid allocations remain pending and never become one unit or reveal cell text', () => {
+  for (const value of ['0', '-1', '1.5', '=1+1', 'SecretCustomer', '1,000', 'Infinity', '9007199254740992']) {
+    const item = project({ '工作區 A 占用': value });
+    assert.deepEqual(item.workspaceIds, []); assert.deepEqual(item.workspaceUnits, {});
+    hasReason(item, 'workspace-values'); hasReason(item, 'no-workspace');
+    assert.doesNotMatch(JSON.stringify(item), /SecretCustomer/);
+  }
+  assert.equal(project({ '工作區 A 占用': '1001' }).workspaceUnits.A, 1001);
+});
+
+test('headers can move, extra private fields stay private, required or duplicate headers fail generically', () => {
+  const reordered = [...header].reverse();
+  assert.equal(setup({ header: reordered, rows: [row({}, reordered)] }).rpc('getTimeline').projects[0].customerCode, 'V-01');
+  const extra = [...header, 'private_notes'];
+  assert.doesNotMatch(JSON.stringify(setup({ header: extra, rows: [row({ private_notes: 'SecretPrivate' }, extra)] }).rpc('getTimeline')), /SecretPrivate/);
+  for (const columns of [header.filter(label => label !== '客戶編號'), [...header, '案號']]) {
+    assert.throws(() => setup({ header: columns }).rpc('getTimeline'), { message: PUBLIC_ERROR });
+  }
+});
+
+test('malformed or missing project IDs produce fixed warnings without hiding valid cases', () => {
+  const payload = plain(setup({ rows: [row(), row({ '案號': 'SecretProject' }), row({ '案號': '' }), Array(22).fill('')] }).rpc('getTimeline'));
+  assert.equal(payload.projects.length, 1);
+  assert.deepEqual(payload.warnings, ['project-id-invalid', 'project-id-missing']);
+  assert.doesNotMatch(JSON.stringify(payload), /SecretProject/);
+  assert.throws(() => setup({ rows: [row(), row()] }).rpc('getTimeline'), { message: PUBLIC_ERROR });
+});
+
+test('empty source is a real empty schedule, malformed and oversized reads fail without truncation', () => {
+  assert.deepEqual(plain(setup({ rows: [] }).rpc('getTimeline').projects), []);
+  const oversized = [[], [], [], [], header, ...Array.from({ length: 996 }, () => [])];
+  oversized[1000] = row({ '案號': 'C-999' });
+  for (const options of [{ response: {} }, { values: [] }, { values: oversized }, { header: [...header, ...Array(43).fill('')] }, { readError: true }]) {
+    assert.throws(() => setup(options).rpc('getTimeline'), { message: PUBLIC_ERROR });
+  }
+});
+
+test('only the configured source property is accepted, including no caller-supplied source or revision', () => {
+  for (const properties of [{}, { SOURCE_SHEET_ID: '' }, { SOURCE_SHEET_ID: 'tiny' }, { SOURCE_SHEET_ID: SOURCE_ID, PUBLIC_FEED_SHEET_ID: 'PRIVATE_EXTRA' }]) {
+    const env = setup({ properties });
+    assert.throws(() => env.rpc('getTimeline'), { message: PUBLIC_ERROR });
+    assert.equal(env.state.reads.length, 0);
+  }
+  for (const arg of [undefined, null, {}, { source: 'PRIVATE_EXTRA' }, { revision: 'abc' }]) {
     const env = setup();
-    assert.equal(env.rpc('saveLayout', inputFor(env, [area], { [area]: 1000 })).projects[0].workspaceUnits[area], 1000);
+    assert.throws(() => env.rpc('getTimeline', arg), { message: PUBLIC_ERROR });
+    assert.equal(env.state.reads.length, 0);
   }
 });
 
-test('source-row or other-user layout change invalidates revision; successful response returns new revision', () => {
-  const env = setup(); const input = inputFor(env);
-  env.master.values[5][1] = '另一個新的目標';
-  assert.throws(() => env.rpc('saveLayout', input), /已被更新/); assert.deepEqual(env.state.writes, []);
-  const first = inputFor(env); const response = env.rpc('saveLayout', first);
-  assert.notEqual(response.revision, first.revision);
-  assert.throws(() => env.rpc('saveLayout', first), /已被更新/);
-  assert.equal(env.state.writes.length, 1);
-});
-
-test('write ACL and lock failures deny layout changes', () => {
-  const env = setup(); const input = inputFor(env); env.layout.writable = false;
-  assert.throws(() => env.rpc('saveLayout', input), /ACL/); assert.deepEqual(env.state.writes, []); assert.equal(env.state.releases, 1);
-  const busy = setup('internal', { lockDenied: true });
-  assert.throws(() => busy.rpc('saveLayout', inputFor(busy)), /其他人/); assert.deepEqual(busy.state.writes, []);
-});
-
-test('publishing defaults to deny for a resource-authorized employee', () => {
-  const env = setup('internal', { assigned: true });
-  assert.throws(() => env.rpc('publishApprovedSnapshot', approvalFor(env)), /主管/); assert.deepEqual(env.state.writes, []);
-});
-
-test('supervisor publication writes only approved projection; empty approval explicitly empties old feed', () => {
-  const env = setup('internal', { assigned: true, publisher: true });
-  const result = env.rpc('publishApprovedSnapshot', approvalFor(env));
-  assert.equal(result.published, 1); assert.deepEqual(env.feed.values[1], safeRow);
-  const serialized = JSON.stringify(env.feed.values);
-  for (const term of ['C-001', 'PrivateProject', 'PrivateCustomer', 'SecretPerson', 'private.example', sourceId]) assert.ok(!serialized.includes(term));
-  assert.equal(env.approval.values[1][0], 'C-001'); // Approval provenance remains only in private settings.
-  env.rpc('publishApprovedSnapshot', { revision: env.rpc('getTimeline').revision, approvals: [] });
-  assert.equal(env.feed.getLastRow(), 1);
-});
-
-test('publication rejects unapproved/raw goal, private fields, dates, pending rows and unconfirmed workspaces', () => {
-  const changes = [
-    item => { item.approved = false; }, item => { delete item.approvedGoal; }, item => { item.approvedGoal = 'PrivateProject 模型'; },
-    item => { item.approvedGoal = 'SecretPerson 模型'; }, item => { item.approvedGoal = 'C-001 製作'; },
-    item => { item.approvedGoal = '=IMPORTDATA("https://private.example")'; }, item => { item.sourceId = sourceId; },
-    item => { item.alias = 'PrivateProject'; }, item => { item.alias = '專案 002'; },
-    item => { item.scheduleStart = '2026-12'; }, item => { item.scheduleStart = '2026-02-29'; },
-    item => { item.scheduleEnd = '2026-01-01'; }, item => { item.workspaceIds = ['B']; item.workspaceUnits = { B: 1 }; },
-    item => { item.workspaceIds = ['C']; item.workspaceUnits = { C: 1 }; }
-  ];
-  for (const change of changes) {
-    const env = setup('internal', { assigned: true, publisher: true }); const input = approvalFor(env); change(input.approvals[0]);
-    assert.throws(() => env.rpc('publishApprovedSnapshot', input)); assert.deepEqual(env.state.writes, []);
+test('HTML permits the read-only Pages frame but rejects URL parameters and private failures', () => {
+  const env = setup();
+  const html = env.rpc('doGet', { queryString: '', parameter: {}, parameters: {}, pathInfo: '' });
+  assert.equal(html.file, 'Index'); assert.equal(html.title, 'PM Studio'); assert.equal(html.frame, 'ALLOWALL');
+  assert.deepEqual(plain(html.meta), { name: 'viewport', content: 'width=device-width, initial-scale=1' });
+  assert.equal(env.state.reads.length, 0);
+  for (const event of [{ queryString: 'mode=internal' }, { parameter: { source: '' } }, { parameters: { source: [''] } }, { pathInfo: 'internal' }, { postData: {} }, 'internal']) {
+    assert.throws(() => env.rpc('doGet', event), { message: PUBLIC_ERROR });
   }
-  const pending = setup('internal', { assigned: true, publisher: true }); pending.master.values[5][8] = '改期，日期待定';
-  assert.throws(() => pending.rpc('publishApprovedSnapshot', approvalFor(pending)), /日期/); assert.deepEqual(pending.state.writes, []);
-  const noAlias = setup('internal', { assigned: true, publisher: true }); noAlias.master.values[5][17] = '';
-  assert.throws(() => noAlias.rpc('publishApprovedSnapshot', approvalFor(noAlias)), /匿名名稱/); assert.deepEqual(noAlias.state.writes, []);
+  assert.throws(() => setup({ htmlError: true }).rpc('doGet'), { message: PUBLIC_ERROR });
 });
 
-test('public deployment has only two callable functions, helpers/private RPCs cannot be used', () => {
-  const env = setup('public');
-  assert.deepEqual(Object.keys(env.context).filter(key => typeof env.context[key] === 'function' && !key.endsWith('_')).sort(), ['doGet', 'getTimeline']);
-  for (const name of ['saveLayout', 'publishApprovedSnapshot', 'loadInternal_', 'publicProject_']) assert.throws(() => env.rpc(name, {}), /unavailable/);
-  for (const token of ['INTERNAL_SHEET_ID', 'INTERNAL_FOLDER_ID', 'DriveApp', 'Session', 'publishApprovedSnapshot', 'saveLayout']) assert.ok(!publicCode.includes(token));
-});
-
-test('public reads only private anonymous feed and returns exact safe fields, empty feed stays empty', () => {
-  const env = setup('public', { feedRows: [safeRow] }); const payload = env.rpc('getTimeline');
-  assert.deepEqual(env.state.opens, [feedId]); assert.deepEqual(env.state.writes, []); assert.deepEqual(env.state.folders, []);
-  assert.deepEqual(Object.keys(payload.projects[0]).sort(), ['alias', 'goal', 'start', 'end', 'workspaceIds', 'workspaceUnits'].sort());
-  assert.deepEqual(plain(payload.workspaces.map(w => w.id)), ['A', 'B', 'C', 'D']); assert.equal(payload.permissions.canEditLayout, false);
-  for (const term of [sourceId, settingsId, feedId, 'C-001', 'PrivateProject', 'sourceUrl', 'owner', 'customer']) assert.ok(!JSON.stringify(payload).includes(term));
-  assert.equal(setup('public').rpc('getTimeline').projects.length, 0);
-});
-
-test('query, RPC arguments and properties cannot switch public to private resources', () => {
-  const env = setup('public');
-  assert.throws(() => env.rpc('getTimeline', { mode: 'internal', sourceId }), /參數/);
-  for (const e of [{ parameter: { mode: 'internal' } }, { queryString: 'mode=internal' }, { pathInfo: 'internal' }]) assert.throws(() => env.rpc('doGet', e), /參數/);
-  assert.deepEqual(env.state.opens, []);
-  env.props.MODE = 'internal'; assert.throws(() => env.rpc('getTimeline'), /公開排程目前/); assert.deepEqual(env.state.opens, []);
-  const changed = setup('public', { properties: { PUBLIC_FEED_SHEET_ID: sourceId } });
-  assert.throws(() => changed.rpc('getTimeline'), /公開排程目前/); assert.deepEqual(changed.state.reads, []);
-});
-
-test('public feed fails closed on extra sheets/columns, formulas, sensitive fields and invalid calendar/resources', () => {
-  const mutations = [
-    env => { env.sheets.get(feedId).push(env.master); }, env => { env.feed.values[0].push('sourceId'); },
-    env => { env.feed.values[1][1] = '=A1'; }, env => { env.feed.values[1][1] = 'https://private.example/source'; },
-    env => { env.feed.values[1][1] = 'C-001 目標'; }, env => { env.feed.values[1][2] = '2026-12'; },
-    env => { env.feed.values[1][2] = '2026-02-29'; }, env => { env.feed.values[1][3] = '2026-01-01'; },
-    env => { env.feed.values[1][4] = '["Z"]'; env.feed.values[1][5] = '{"Z":1}'; },
-    env => { env.feed.values[1][5] = '{"A":1,"sourceId":"secret"}'; }, env => { env.feed.values[1][5] = '{"A":1001}'; },
-    env => { env.feed.values[1][5] = '{"A":0}'; }, env => { env.feed.values[1][5] = '{"A":1.5}'; },
-    env => { env.feed.values.push([...safeRow]); }
-  ];
-  for (const mutate of mutations) {
-    const env = setup('public', { feedRows: [safeRow] }); mutate(env);
-    assert.throws(() => env.rpc('getTimeline'), error => error.message === '公開排程目前無法讀取，請稍後重試。');
-    assert.deepEqual(env.state.writes, []);
+test('public RPC surface has only doGet and getTimeline; helpers and all former writes are unavailable', () => {
+  const env = setup();
+  const functions = [...code.matchAll(/^function (\w+)\(/gm)].map(match => match[1]);
+  assert.deepEqual(functions.filter(name => !name.endsWith('_')), ['doGet', 'getTimeline']);
+  for (const name of ['saveLayout', 'publishApprovedSnapshot', 'loadInternal_', 'publicRows_', 'rescheduled_']) {
+    assert.throws(() => env.rpc(name, {}), /unavailable/);
   }
-  const denied = setup('public', { deniedIds: [feedId] });
-  assert.throws(() => denied.rpc('getTimeline'), error => !error.message.includes(feedId));
-});
-
-test('bounded reads fail instead of silently discarding source row 1001', () => {
-  const env = setup(); env.master.values[1000] = ['C-002'];
-  assert.throws(() => env.rpc('getTimeline'), /超出/); assert.deepEqual(env.state.reads, []);
-  const pub = setup('public', { feedRows: [safeRow] }); pub.feed.values[1000] = [...safeRow];
-  assert.throws(() => pub.rpc('getTimeline'), /公開排程目前/); assert.deepEqual(pub.state.reads, []);
-});
-
-test('approved anonymous extra A/B characters, C models and D work survive publication and readback', () => {
-  for (const [ids, units] of [[['A', 'B', 'C'], { A: 3, B: 4, C: 3 }], [['D'], { D: 4 }]]) {
-    const env = setup('internal', { publisher: true });
-    env.rpc('saveLayout', inputFor(env, ids, units));
-    const input = approvalFor(env); input.approvals[0].workspaceIds = ids; input.approvals[0].workspaceUnits = units;
-    env.rpc('publishApprovedSnapshot', input);
-    const publicEnv = setup('public', { feedRows: [env.feed.values[1]] });
-    const payload = publicEnv.rpc('getTimeline');
-    assert.deepEqual(plain(payload.projects[0].workspaceIds), ids);
-    assert.deepEqual(plain(payload.projects[0].workspaceUnits), units);
-    assert.ok(payload.workspaces.every(w => w.capacity === null));
-    assert.equal(payload.workspaces.find(w => w.id === 'A').usualLoad, 2);
-    assert.equal(payload.workspaces.find(w => w.id === 'B').usualLoad, 2);
-  }
+  assert.doesNotMatch(code, /SpreadsheetApp|DriveApp|Session\.|LockService|setValues|appendRow|batchUpdate|Values\.update|setProperty|UrlFetchApp|ScriptApp|Logger|console\./);
 });

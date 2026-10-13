@@ -4,14 +4,14 @@ import { mkdir, mkdtemp, readFile, writeFile, readdir, rm, symlink } from 'node:
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Script, createContext } from 'node:vm';
-import { createStaticBridge } from '../ui/static-bridge.mjs';
-import { buildPublicSite } from '../../scripts/build-public-site.mjs';
-import { buildGoogleUi } from '../../scripts/build-google-ui.mjs';
+import { buildPublicSite, validateAppUrl, renderPublicEntry } from '../../scripts/build-public-site.mjs';
+import { createPublicPreviewHandler } from '../../scripts/serve-public-site.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const local = resolve(root, 'local');
-const snapshot = (projects = []) => ({ schemaVersion: 1, publishedAt: '2026-01-01T08:00:00.000Z', projects });
-const syntheticProject = () => ({ alias: '專案 001', goal: '合成測試排程', start: '2026-10-12', end: '2027-01-15', workspaceIds: ['B', 'C'], workspaceUnits: { B: 3, C: 2 } });
+// Deliberately fictional; a real deployment address is supplied only at build time.
+const appUrl = 'https://script.google.com/macros/s/FICTIONAL_PM_STUDIO_TEST_001/exec';
+const updatedUrl = 'https://script.google.com/macros/s/FICTIONAL_PM_STUDIO_TEST_002/exec';
 
 async function temporaryDirectory(t) {
   await mkdir(local, { recursive: true });
@@ -23,206 +23,191 @@ async function temporaryDirectory(t) {
   return directory;
 }
 
-test('static bridge reads only a relative anonymous snapshot and computes the current Taipei day', async () => {
-  const calls = [];
-  const call = createStaticBridge({ now: () => new Date('2026-10-12T16:00:00Z'), fetchImpl: async (...args) => {
-    calls.push(args);
-    return { ok: true, json: async () => snapshot([syntheticProject()]) };
-  } });
-  const payload = await call('getTimeline');
-  assert.deepEqual(calls, [['./data/schedule.json', { cache: 'no-store', credentials: 'omit' }]]);
-  assert.equal(payload.today, '2026-10-13');
-  assert.equal(payload.syncedAt, '2026-01-01T08:00:00.000Z');
-  assert.equal(payload.permissions.canEditLayout, false);
-  assert.deepEqual(payload.projects[0].workspaceUnits, { B: 3, C: 2 });
-  await assert.rejects(call('saveLayout', {}));
-  await assert.rejects(call('getTimeline', { source: 'PRIVATE' }));
-  assert.equal(calls.length, 1);
-});
-
-test('static bridge rejects failed or private responses instead of creating substitute records', async () => {
-  const responses = [
-    async () => { throw new Error('PRIVATE_SERVER_ERROR'); },
-    async () => ({ ok: false, json: async () => snapshot() }),
-    async () => ({ ok: true, json: async () => ({ ...snapshot(), sourceUrl: 'PRIVATE' }) }),
-    async () => ({ ok: true, json: async () => snapshot([{ ...syntheticProject(), customer: 'PRIVATE' }]) }),
-    async () => ({ ok: true, json: async () => { throw new Error('Invalid JSON'); } }),
-  ];
-  for (const fetchImpl of responses) {
-    await assert.rejects(createStaticBridge({ fetchImpl })('getTimeline'), (error) => {
-      assert.equal(error.message, '公開排程目前無法讀取，請稍後再試。');
-      return true;
-    });
+test('only exact Google Apps Script production URLs are accepted', () => {
+  assert.equal(validateAppUrl(appUrl), appUrl);
+  for (const invalid of [
+    undefined, null, {}, '', 'javascript:alert(1)',
+    appUrl.replace('https:', 'http:'),
+    appUrl.replace('script.google.com', 'script.google.com.example.org'),
+    appUrl.replace('script.google.com', 'user:secret@script.google.com'),
+    appUrl.replace('script.google.com', 'script.google.com:443'),
+    appUrl.replace('/exec', '/dev'),
+    appUrl.replace('/macros/s/', '/macros/u/0/s/'),
+    appUrl.replace('/macros/s/', '/macros/s/../s/'),
+    appUrl.replace('FICTIONAL', '%46ICTIONAL'),
+    `${appUrl}/`, `${appUrl}?mode=internal`, `${appUrl}#internal`,
+    `${appUrl}\n`, `${appUrl}\r\n`, ` ${appUrl}`, `${appUrl} `,
+    `${appUrl}" onload="alert(1)`, `${appUrl}</iframe><script>alert(1)</script>`,
+  ]) {
+    assert.throws(() => validateAppUrl(invalid), /PM_STUDIO_APP_URL/);
   }
 });
 
-test('public build requires a supplied valid snapshot and refuses contaminated output', async (t) => {
+test('public build requires a valid URL and refuses private or unexpected output files', async (t) => {
   const directory = await temporaryDirectory(t);
   const outputDir = resolve(directory, 'site');
-  await assert.rejects(buildPublicSite({ outputDir }), /--snapshot/);
+  await assert.rejects(buildPublicSite({ appUrl: '', outputDir }), /PM_STUDIO_APP_URL/);
   await assert.rejects(readdir(outputDir), { code: 'ENOENT' });
-  const snapshotPath = resolve(directory, 'snapshot.json');
-  await writeFile(snapshotPath, JSON.stringify({ ...snapshot(), privateField: 'PRIVATE' }));
-  await assert.rejects(buildPublicSite({ snapshotPath, outputDir }));
-  await assert.rejects(readdir(outputDir), { code: 'ENOENT' });
-  await writeFile(snapshotPath, JSON.stringify(snapshot()));
   await mkdir(outputDir);
   await writeFile(resolve(outputDir, 'Code.gs'), 'PRIVATE');
-  await assert.rejects(buildPublicSite({ snapshotPath, outputDir }), /未允許/);
+  await assert.rejects(buildPublicSite({ appUrl, outputDir }), /未允許/);
   assert.equal(await readFile(resolve(outputDir, 'Code.gs'), 'utf8'), 'PRIVATE');
-  await assert.rejects(buildPublicSite({ snapshotPath, outputDir: root }), /獨立資料夾/);
-  await assert.rejects(buildGoogleUi({ outputDir, transport: 'static', packageDir: null }), /公開前端/);
+  await assert.rejects(buildPublicSite({ appUrl, outputDir: root }), /獨立資料夾/);
+  await assert.rejects(buildPublicSite({ appUrl, outputDir: resolve(root, '..', 'outside') }), /獨立資料夾/);
 });
 
-test('public build outputs only publishable files and executable scripts without Google or internal code', async (t) => {
+test('public output contains only the read-only iframe entry and no project snapshot or internal code', async (t) => {
   const directory = await temporaryDirectory(t);
-  const snapshotPath = resolve(directory, 'snapshot.json');
   const outputDir = resolve(directory, 'site');
-  const source = snapshot([syntheticProject()]);
-  await writeFile(snapshotPath, JSON.stringify(source));
-  const result = await buildPublicSite({ snapshotPath, outputDir });
-  assert.equal(result.projectCount, 1);
-  assert.deepEqual((await readdir(outputDir)).sort(), ['.nojekyll', 'data', 'index.html']);
-  assert.deepEqual(await readdir(resolve(outputDir, 'data')), ['schedule.json']);
-  assert.deepEqual(JSON.parse(await readFile(resolve(outputDir, 'data/schedule.json'), 'utf8')), source);
+  const result = await buildPublicSite({ appUrl, outputDir });
+  assert.equal(result.outputDir, outputDir);
+  assert.deepEqual((await readdir(outputDir)).sort(), ['.nojekyll', 'index.html']);
   const html = await readFile(resolve(outputDir, 'index.html'), 'utf8');
+  assert.ok(html.includes(`<iframe id="schedule" src="${appUrl}"`));
+  assert.match(html, /height:100dvh/);
+  assert.match(html, /referrerpolicy="no-referrer"/);
+  assert.match(html, /正在連接排程/);
+  assert.match(html, /另開排程/);
+  assert.doesNotMatch(html, /schedule\.json|google\.script|saveLayout|publishApprovedSnapshot|INTERNAL_SHEET_ID|sourceUrl|fetch\(|\/api\/|search|assignment-form|客戶名|目前交付目標/);
   for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Script(match[1]);
-  assert.doesNotMatch(html, /google\.script|createGoogleBridge|saveLayout|publishApprovedSnapshot|normalizeInternalPayload|sourceUrl|PUBLIC_FEED_SHEET_ID|createDemo|snapshotFromFeedRows|parseFeedCsv|\/api\/|id="assignment-form"|id="source-link"|id="layout-demo"|合成測試排程/);
-  assert.match(html, /\.\/data\/schedule\.json/);
-  assert.match(html, /目前區間無已公開排程/);
-  assert.match(html, /目前尚無已公開排程；請聯繫團隊確認檔期。/);
-  assert.match(html, /台北時間/);
-  assert.match(html, /空白時段不代表可預約/);
-  assert.match(html, /id="theme-toggle"/);
-  assert.match(html, /id="week-view"/);
-  assert.doesNotMatch(html, /<(?:script|link)[^>]+(?:src|href)="\//);
-  // Rebuilding a clean output is supported without accumulating files.
-  await buildPublicSite({ snapshotPath, outputDir });
+  await buildPublicSite({ appUrl: updatedUrl, outputDir });
+  assert.match(await readFile(resolve(outputDir, 'index.html'), 'utf8'), /TEST_002\/exec/);
+  assert.deepEqual(await readdir(directory), ['site']);
 });
 
-test('failed generation and installation preserve the complete previous publication', async (t) => {
+test('the environment may supply the deployment URL without exposing it in the build result', async (t) => {
   const directory = await temporaryDirectory(t);
-  const snapshotPath = resolve(directory, 'snapshot.json');
+  const previous = process.env.PM_STUDIO_APP_URL;
+  try {
+    process.env.PM_STUDIO_APP_URL = appUrl;
+    const result = await buildPublicSite({ outputDir: resolve(directory, 'site') });
+    assert.equal(JSON.stringify(result).includes(appUrl), false);
+  } finally {
+    if (previous === undefined) delete process.env.PM_STUDIO_APP_URL;
+    else process.env.PM_STUDIO_APP_URL = previous;
+  }
+});
+
+test('legacy snapshots are retained in a complete backup and absent from the new site', async (t) => {
+  const directory = await temporaryDirectory(t);
   const outputDir = resolve(directory, 'site');
-  await writeFile(snapshotPath, JSON.stringify(snapshot()));
-  await buildPublicSite({ snapshotPath, outputDir });
+  await mkdir(resolve(outputDir, 'data'), { recursive: true });
+  await writeFile(resolve(outputDir, 'index.html'), 'old complete HTML');
+  await writeFile(resolve(outputDir, '.nojekyll'), '');
+  await writeFile(resolve(outputDir, 'data/schedule.json'), '{"old":"fixture"}');
+  const result = await buildPublicSite({ appUrl, outputDir });
+  assert.ok(result.previousSiteBackup.startsWith(directory + sep));
+  assert.equal(await readFile(resolve(result.previousSiteBackup, 'index.html'), 'utf8'), 'old complete HTML');
+  assert.equal(await readFile(resolve(result.previousSiteBackup, 'data/schedule.json'), 'utf8'), '{"old":"fixture"}');
+  assert.deepEqual((await readdir(outputDir)).sort(), ['.nojekyll', 'index.html']);
+  assert.deepEqual((await readdir(result.previousSiteBackup)).sort(), ['.nojekyll', 'data', 'index.html']);
+});
+
+test('generation and installation failures preserve the complete previous site', async (t) => {
+  const directory = await temporaryDirectory(t);
+  const outputDir = resolve(directory, 'site');
+  await buildPublicSite({ appUrl, outputDir });
   const previousHtml = await readFile(resolve(outputDir, 'index.html'), 'utf8');
-  const previousData = await readFile(resolve(outputDir, 'data/schedule.json'), 'utf8');
-  const updated = { ...snapshot([syntheticProject()]), publishedAt: '2026-10-12T04:00:00.000Z' };
-  await writeFile(snapshotPath, JSON.stringify(updated));
-  await assert.rejects(buildPublicSite({ snapshotPath, outputDir, buildUi: async ({ outputDir: staging }) => {
-    await writeFile(resolve(staging, 'index.html'), 'incomplete HTML');
-    throw Object.assign(new Error('Simulated disk write failure'), { code: 'ENOSPC' });
-  } }), /Simulated disk write failure/);
+  await assert.rejects(buildPublicSite({ appUrl: updatedUrl, outputDir, renderEntry: async () => {
+    throw Object.assign(new Error('Simulated generation failure'), { code: 'ENOSPC' });
+  } }), /Simulated generation failure/);
   assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), previousHtml);
-  assert.equal(await readFile(resolve(outputDir, 'data/schedule.json'), 'utf8'), previousData);
-  await assert.rejects(buildPublicSite({ snapshotPath, outputDir, installDirectory: async () => {
+  await assert.rejects(buildPublicSite({ appUrl: updatedUrl, outputDir, installDirectory: async () => {
     throw Object.assign(new Error('Simulated Windows directory lock'), { code: 'EPERM' });
   } }), /Simulated Windows directory lock/);
   assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), previousHtml);
-  assert.equal(await readFile(resolve(outputDir, 'data/schedule.json'), 'utf8'), previousData);
-  assert.deepEqual((await readdir(directory)).sort(), ['site', 'snapshot.json']);
-  await buildPublicSite({ snapshotPath, outputDir });
-  assert.deepEqual(JSON.parse(await readFile(resolve(outputDir, 'data/schedule.json'), 'utf8')), updated);
-  assert.deepEqual((await readdir(outputDir)).sort(), ['.nojekyll', 'data', 'index.html']);
+  assert.deepEqual((await readdir(directory)).sort(), ['site']);
+  assert.deepEqual((await readdir(outputDir)).sort(), ['.nojekyll', 'index.html']);
 });
 
-test('public build rejects junction ancestors before writing through them', async (t) => {
+test('failed legacy migration restores the old HTML and snapshot together', async (t) => {
   const directory = await temporaryDirectory(t);
-  const snapshotPath = resolve(directory, 'snapshot.json');
+  const outputDir = resolve(directory, 'site');
+  await mkdir(resolve(outputDir, 'data'), { recursive: true });
+  await writeFile(resolve(outputDir, 'index.html'), 'old HTML');
+  await writeFile(resolve(outputDir, '.nojekyll'), '');
+  await writeFile(resolve(outputDir, 'data/schedule.json'), 'old snapshot');
+  await assert.rejects(buildPublicSite({ appUrl, outputDir, installDirectory: async () => {
+    throw new Error('Simulated migration failure');
+  } }), /Simulated migration failure/);
+  assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), 'old HTML');
+  assert.equal(await readFile(resolve(outputDir, 'data/schedule.json'), 'utf8'), 'old snapshot');
+  assert.deepEqual(await readdir(directory), ['site']);
+});
+
+test('unexpected files in a legacy data folder are rejected before replacement', async (t) => {
+  const directory = await temporaryDirectory(t);
+  const outputDir = resolve(directory, 'site');
+  await mkdir(resolve(outputDir, 'data'), { recursive: true });
+  await writeFile(resolve(outputDir, 'data/private.json'), 'PRIVATE');
+  await assert.rejects(buildPublicSite({ appUrl, outputDir }), /未允許/);
+  assert.equal(await readFile(resolve(outputDir, 'data/private.json'), 'utf8'), 'PRIVATE');
+});
+
+test('junction ancestors are rejected before writing through them', async (t) => {
+  const directory = await temporaryDirectory(t);
   const actual = resolve(directory, 'actual');
   const link = resolve(directory, 'linked');
-  await writeFile(snapshotPath, JSON.stringify(snapshot()));
   await mkdir(actual);
   try { await symlink(actual, link, process.platform === 'win32' ? 'junction' : 'dir'); }
   catch (error) {
     if (['EPERM', 'EACCES'].includes(error.code)) { t.skip('Environment does not permit symlink creation.'); return; }
     throw error;
   }
-  await assert.rejects(buildPublicSite({ snapshotPath, outputDir: resolve(link, 'site') }), /符號連結/);
+  await assert.rejects(buildPublicSite({ appUrl, outputDir: resolve(link, 'site') }), /符號連結/);
   assert.deepEqual(await readdir(actual), []);
 });
 
-function browserElements() {
-  const elements = new Map();
-  function element() {
-    return { children: [], style: {}, dataset: {}, attributes: {}, listeners: new Map(),
-      textContent: '', hidden: false, disabled: false, scrollLeft: 0, clientWidth: 900,
-      classList: { toggle() {} },
-      append(...children) { this.children.push(...children); },
-      replaceChildren(...children) { this.children = children; },
-      setAttribute(name, value) { this.attributes[name] = value; },
-      addEventListener(name, callback) { this.listeners.set(name, callback); },
-      querySelector(selector) { return this.children.find((child) => child.className?.split(' ').includes(selector.slice(1))); },
-      getBoundingClientRect() { return { left: 0, right: 900, top: 0, bottom: 500 }; },
-      showModal() {}, close() {},
-    };
-  }
-  const document = { documentElement: { dataset: { theme: 'dark' } },
-    getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); },
-    createElement() { return element(); },
-  };
-  return { document, elements };
-}
-
-test('failed reloads keep the prior-publication label through navigation and successful retries restore it', async (t) => {
-  const directory = await temporaryDirectory(t);
-  const snapshotPath = resolve(directory, 'snapshot.json');
-  const outputDir = resolve(directory, 'site');
-  await writeFile(snapshotPath, JSON.stringify(snapshot()));
-  await buildPublicSite({ snapshotPath, outputDir });
-  const html = await readFile(resolve(outputDir, 'index.html'), 'utf8');
-  const { document, elements } = browserElements();
-  let fail = false;
-  let calls = 0;
-  const intervals = [];
-  const context = createContext({ document, Intl, Date, Map, Set, console,
-    fetch: async () => { calls++; if (fail) throw new Error('Offline'); return { ok: true, json: async () => snapshot() }; },
-    localStorage: { getItem() { return null; }, setItem() {} },
-    ResizeObserver: class { observe() {} },
-    requestAnimationFrame() { return 1; }, cancelAnimationFrame() {},
-    setInterval(callback) { intervals.push(callback); return intervals.length; },
+test('connection status is neutral and failure keeps a direct schedule link available', () => {
+  const html = renderPublicEntry(appUrl);
+  const frame = { listeners: {}, addEventListener(name, handler) { this.listeners[name] = handler; } };
+  const connection = { hidden: false };
+  const message = { textContent: '' };
+  let timer;
+  const context = createContext({
+    document: { getElementById(id) { return { schedule: frame, connection, 'connection-message': message }[id]; } },
+    setTimeout(handler) { timer = handler; return 1; }, clearTimeout() {},
   });
-  for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) await new Script(match[1]).runInContext(context);
-  assert.equal(calls, 1);
-  assert.equal(elements.get('sync-status').textContent, '最後發布 · 2026-01-01 16:00（台北時間）');
-  assert.equal(elements.get('notification').textContent, '目前尚無已公開排程；請聯繫團隊確認檔期。');
-  fail = true;
-  await elements.get('refresh').listeners.get('click')();
-  assert.match(elements.get('sync-status').textContent, /^讀取失敗 · 上次發布/);
-  assert.match(elements.get('notification').textContent, /上次成功讀取的資料/);
-  elements.get('week-view').listeners.get('click')();
-  assert.match(elements.get('sync-status').textContent, /^讀取失敗 · 上次發布/);
-  for (const callback of intervals) callback();
-  assert.equal(calls, 2);
-  fail = false;
-  await elements.get('refresh').listeners.get('click')();
-  assert.match(elements.get('sync-status').textContent, /^最後發布/);
-  assert.equal(elements.get('refresh').disabled, false);
+  for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Script(match[1]).runInContext(context);
+  timer();
+  assert.match(message.textContent, /連接時間較長/);
+  frame.listeners.load();
+  assert.equal(connection.hidden, true);
+  frame.listeners.error();
+  assert.equal(connection.hidden, false);
+  assert.match(message.textContent, /無法連接/);
+  assert.match(html, /class="open-schedule"[^>]+target="_blank"[^>]+rel="noopener noreferrer"/);
 });
 
-test('static site preserves the full approved 500-character goal in project details', async (t) => {
+test('preview serves the entry at the project path and rejects snapshot and private paths', async (t) => {
   const directory = await temporaryDirectory(t);
-  const snapshotPath = resolve(directory, 'snapshot.json');
   const outputDir = resolve(directory, 'site');
-  const goal = '公'.repeat(500);
-  const value = snapshot([{ ...syntheticProject(), goal }]);
-  await writeFile(snapshotPath, JSON.stringify(value));
-  await buildPublicSite({ snapshotPath, outputDir });
-  const html = await readFile(resolve(outputDir, 'index.html'), 'utf8');
-  const { document, elements } = browserElements();
-  class FixedDate extends Date {
-    constructor(...args) { super(...(args.length ? args : ['2026-10-12T04:00:00Z'])); }
+  await buildPublicSite({ appUrl, outputDir });
+  const handler = createPublicPreviewHandler(outputDir);
+  async function request(url, method = 'GET') {
+    const response = { status: null, headers: {}, body: undefined,
+      writeHead(status, headers = {}) { this.status = status; this.headers = headers; },
+      end(body) { this.body = body?.toString(); },
+    };
+    await handler({ url, method }, response);
+    return response;
   }
-  const context = createContext({ document, Intl, Date: FixedDate, Map, Set,
-    fetch: async () => ({ ok: true, json: async () => value }),
-    localStorage: { getItem() { return null; }, setItem() {} },
-    ResizeObserver: class { observe() {} },
-    requestAnimationFrame() { return 1; }, cancelAnimationFrame() {}, setInterval() {},
-  });
-  for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) await new Script(match[1]).runInContext(context);
-  const card = elements.get('timeline-canvas').children.find((child) => child.className?.split(' ').includes('project-card'));
-  assert.ok(card);
-  card.listeners.get('click')();
-  assert.equal(elements.get('detail-content').children[1].textContent, goal);
+  for (const path of ['/', '/PM-Studio']) {
+    const response = await request(path);
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.Location, '/PM-Studio/');
+  }
+  for (const path of ['/PM-Studio/', '/PM-Studio/index.html']) {
+    const response = await request(path);
+    assert.equal(response.status, 200);
+    assert.match(response.body, /<iframe/);
+    assert.equal(response.headers['X-Content-Type-Options'], 'nosniff');
+  }
+  const head = await request('/PM-Studio/', 'HEAD');
+  assert.equal(head.status, 200);
+  assert.equal(head.body, undefined);
+  assert.equal((await request('/PM-Studio/', 'POST')).status, 405);
+  for (const path of ['/PM-Studio/data/schedule.json', '/PM-Studio/Code.gs', '/local/operations/config/sources.json', '/.git/config']) {
+    assert.equal((await request(path)).status, 404);
+  }
 });

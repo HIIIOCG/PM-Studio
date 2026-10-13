@@ -1,30 +1,39 @@
 # PM Studio
 
-PM Studio shares our production schedule for 3D characters, environments, and game art.
+PM Studio displays our production schedule for 3D characters, environments, and game art. Browse dates, return to today, or switch between Chinese and English. Production and correction periods are distinct; projects awaiting dates or assignments remain visible.
 
-The Google Project List is the single source for project information, dates, status, and workspace allocations. The simplified architecture will use one Apps Script and display every project's ID, customer code, dates, and necessary workspace information. Names and private details remain internal.
+The architecture has three parts:
 
-The 2026-10-13 migration covers backups and consolidation of the source sheet only. The former public alias field is replaced by a customer-code field and four workspace-allocation fields. Separate aliases and per-project publication approval are no longer part of the new data rules. The single Script and simplified website are pending later steps; the existing sites still use the previous applications and anonymous snapshot.
+1. **Google Project List:** the only source of project information, dates, status, and workspace allocations. Internal staff edit this sheet directly using their existing Google permissions.
+2. **One read-only Apps Script:** selects project IDs, customer codes, dates, and workspace information on the server. Names, goals, notes, and source links never reach the public browser.
+3. **This repository's GitHub Pages:** embeds the Script and stores no project snapshot.
 
-Contact our team to discuss your project and confirm availability. An empty time span does not reserve production time; every booking requires team confirmation.
+Every project uses its existing ID. There is no separate public alias, anonymous spreadsheet, per-project publication approval, website editor, or internal website mode. Missing or uncertain data stays pending; it is never invented. Empty time spans do not reserve production time—contact the team to confirm availability.
 
-<details>
-<summary>Maintenance and publishing</summary>
+## Development
 
-The existing public site uses this repository's own GitHub Pages project at `/PM-Studio/`. The repository owner controls public visibility and Pages activation. The current workflow remains manual; pushing source changes does not publish the site automatically. No deployment is included in the source-sheet migration.
-
-The following Node.js 24 commands still build and preview the legacy anonymous artifact. They do not read the consolidated source sheet or implement the new publication rules:
+Use Node.js 24; no package installation is required.
 
 ```sh
-node scripts/build-public-site.mjs --snapshot public/data/schedule.json
+node --test google-app/tests/*.test.mjs
+node scripts/build-google-ui.mjs
+node scripts/serve-google-preview.mjs
+```
+
+The local preview at `http://127.0.0.1:4318/` contains fictional records only. The build produces `google-app/Index.html` and the private deployment package `local/google-app-bundle/single/`.
+
+To build the Pages entry, supply the verified Script execution URL through `PM_STUDIO_APP_URL`, then run:
+
+```sh
+node scripts/build-public-site.mjs
 node scripts/serve-public-site.mjs
 ```
 
-The legacy build produces only public HTML and the existing anonymous schedule under the ignored `local/public-site/` directory. Google remains the source of project information; the snapshot is a publication artifact. Do not copy private source-sheet fields into it or restore the removed alias column to make the old publication method work.
+The Pages preview is `http://127.0.0.1:4320/PM-Studio/`. Only `index.html` and `.nojekyll` under `local/public-site/` are deployable. The Pages workflow runs manually; a push does not publish. Repository visibility, activation, and the company homepage remain outside this build's scope.
 
-- [Project rules and agent instructions](AGENTS.md)
-- [Public snapshot and GitHub Pages publication](.agents/public-site.md)
-- [Development, Google permissions, and deployment](.agents/web-development.md)
-- [Google Apps Script applications](google-app/README.md)
+Live deployment and retirement status must be verified separately; source changes or successful local builds do not establish that a site is online. Production IDs, URLs, and operation records remain in ignored `local/operations/`. Previous versions remain recoverable through Git history and Drive history backups.
 
-</details>
+- [Project rules](AGENTS.md)
+- [Single Script and public data contract](google-app/README.md)
+- [Development and deployment](.agents/web-development.md)
+- [GitHub Pages release](.agents/public-site.md)

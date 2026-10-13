@@ -1,34 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { resolve, sep } from 'node:path';
 import { Script, createContext } from 'node:vm';
-import { buildPublicSite } from '../../scripts/build-public-site.mjs';
 import { buildGoogleUi } from '../../scripts/build-google-ui.mjs';
-import { WORKSPACES } from '../../scripts/timeline-core.mjs';
+import { createPreviewPayload } from '../../scripts/serve-google-preview.mjs';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const local = resolve(root, 'local');
-const approvedProject = () => ({ alias: '專案 001', goal: '角色與場景製作', start: '2026-10-12', end: '2027-01-15', workspaceIds: ['B', 'C'], workspaceUnits: { B: 3, C: 2 } });
-const snapshot = (projects = [approvedProject()]) => ({ schemaVersion: 1, publishedAt: '2026-10-12T04:00:00.000Z', projects });
-
-async function fixture(t, value = snapshot()) {
-  await mkdir(local, { recursive: true });
-  const directory = await mkdtemp(resolve(local, 'localization-test-'));
-  t.after(async () => {
-    if (!resolve(directory).startsWith(local + sep)) throw new Error('Unsafe temporary cleanup path.');
-    await rm(directory, { recursive: true, force: true });
-  });
-  const snapshotPath = resolve(directory, 'snapshot.json');
-  const outputDir = resolve(directory, 'site');
-  await writeFile(snapshotPath, JSON.stringify(value));
-  await buildPublicSite({ snapshotPath, outputDir });
-  return { html: await readFile(resolve(outputDir, 'index.html'), 'utf8'), value, snapshotPath, outputDir, directory };
+async function fixture(t) {
+  const directory = await mkdtemp(resolve(tmpdir(), 'pm-single-browser-'));
+  t.after(async () => { if (!resolve(directory).startsWith(resolve(tmpdir())+sep)) throw new Error('Unsafe cleanup'); await rm(directory,{recursive:true,force:true}); });
+  return (await buildGoogleUi({outputDir:directory,packageDir:null}))[0].html;
 }
-
-// Read the generated template so missing controls and incorrect placement fail,
-// while running its actual scripts without adding a browser dependency.
 function browserDocument(html) {
   const elements = new Map();
   function element(tag = 'div') {
@@ -103,188 +86,105 @@ function browserDocument(html) {
   return { document, elements };
 }
 
-async function mount(html, value, { preferences = new Map(), blockedStorage = false, failInitially = false, googlePayload } = {}) {
+async function mount(html, value, { preferences = new Map(), blockedStorage = false, failInitially = false, width = 900 } = {}) {
   const { document, elements } = browserDocument(html);
-  let fail = failInitially;
-  const calls = [];
-  class FixedDate extends Date { constructor(...args) { super(...(args.length ? args : ['2026-10-13T04:00:00Z'])); } }
-  const runner = { withSuccessHandler(handler) { this.success = handler; return this; }, withFailureHandler(handler) { this.failure = handler; return this; },
-    getTimeline(...args) { calls.push(args); if (fail) this.failure(new Error('Offline')); else this.success(googlePayload); },
-  };
-  const context = createContext({ document, Intl, Date: FixedDate, Map, Set, console,
-    fetch: async (...args) => { calls.push(args); if (fail) throw new Error('Offline'); return { ok: true, json: async () => value }; },
-    google: { script: { run: runner } },
-    localStorage: { getItem(key) { if (blockedStorage) throw new Error('Storage blocked'); return preferences.get(key) ?? null; },
-      setItem(key, saved) { if (blockedStorage) throw new Error('Storage blocked'); preferences.set(key, saved); } },
-    ResizeObserver: class { observe() {} }, requestAnimationFrame() { return 1; }, cancelAnimationFrame() {}, setInterval() {},
+  elements.get('timeline-viewport').clientWidth = width;
+  let fail=failInitially, payload=value;
+  const calls=[];
+  const runner={withSuccessHandler(fn){this.ok=fn;return this;},withFailureHandler(fn){this.bad=fn;return this;},getTimeline(...args){calls.push(args);if(fail)this.bad(new Error('PRIVATE_SOURCE_ID'));else this.ok(payload);}};
+  const context=createContext({document,Intl,Date,Map,Set,console,google:{script:{run:runner}},
+    localStorage:{getItem(key){if(blockedStorage)throw new Error('blocked');return preferences.get(key)||null;},setItem(key,value){if(blockedStorage)throw new Error('blocked');preferences.set(key,value);}},
+    ResizeObserver:class{observe(){}},
   });
-  for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) await new Script(match[1]).runInContext(context);
-  const get = (id) => { const node = elements.get(id); assert.ok(node, `Generated page must contain #${id}`); return node; };
-  return { document, get, calls, preferences, fail(value) { fail = value; },
-    click(id) { return get(id).click(); },
-    input(id, value) { get(id).value = value; return get(id).listeners.get('input')({ target: get(id) }); },
-  };
+  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) await new Script(match[1]).runInContext(context);
+  const get=(id)=>{const node=elements.get(id);assert.ok(node,id);return node;};
+  return {document,get,calls,preferences,fail(value){fail=value;},payload(value){payload=value;},click(id){return get(id).click();}};
 }
+const sample=()=>createPreviewPayload(new Date('2026-12-21T04:00:00Z'));
 
-test('public language control is in the header and translates chrome without changing approved data', async (t) => {
-  const built = await fixture(t);
-  const original = JSON.stringify(built.value);
-  const page = await mount(built.html, built.value);
-  assert.equal(page.document.documentElement.lang, 'zh-Hant');
-  assert.equal(page.get('today-button').textContent, '今天');
-  assert.equal(page.get('language-toggle').textContent, 'English');
-  assert.ok(page.get('language-toggle').parentNode.classList.contains('header-actions'));
-  await page.click('language-toggle');
-  assert.equal(page.document.documentElement.lang, 'en');
-  assert.equal(page.preferences.get('pm-studio-language'), 'en');
-  assert.equal(page.get('language-toggle').textContent, '繁體中文');
-  assert.equal(page.get('language-toggle').getAttribute('aria-label'), '切換至繁體中文');
-  assert.equal(page.get('today-button').textContent, 'Today');
-  assert.equal(page.get('month-view').textContent, 'Month');
-  assert.equal(page.get('week-view').textContent, 'Week');
-  assert.equal(page.get('refresh').textContent, 'Refresh');
-  assert.match(page.get('search').placeholder, /search/i);
-  assert.match(page.get('search').getAttribute('aria-label'), /search/i);
-  assert.match(page.document.title, /PM Studio/);
-  assert.doesNotMatch(page.document.title, /[\u3400-\u9fff]/u);
-  assert.doesNotMatch(page.document.querySelector('h1').textContent, /[\u3400-\u9fff]/u);
-  assert.doesNotMatch(page.get('mode-description').textContent, /[\u3400-\u9fff]/u);
-  assert.doesNotMatch(page.document.querySelector('.page-footer').textContent, /[\u3400-\u9fff]/u);
-  assert.doesNotMatch(page.get('workspace-labels').textContent, /[\u3400-\u9fff]/u);
-  assert.match(page.get('visible-count').textContent, /1/);
-  assert.doesNotMatch(page.get('visible-count').textContent, /[\u3400-\u9fff]/u);
-  const card = page.get('timeline-canvas').querySelector('.project-card');
-  assert.ok(card);
-  assert.equal(card.querySelector('.card-goal').textContent, built.value.projects[0].goal);
-  assert.match(card.querySelector('.card-heading').textContent, /專案 001/);
-  assert.doesNotMatch(card.querySelector('.cross-label').textContent, /[\u3400-\u9fff]/u);
-  assert.equal(page.calls.length, 1, 'Language switch must not re-read or write the schedule');
-  assert.equal(JSON.stringify(built.value), original);
-  assert.equal(await readFile(built.snapshotPath, 'utf8'), original);
-  assert.deepEqual(JSON.parse(await readFile(resolve(built.outputDir, 'data/schedule.json'), 'utf8')), built.value);
+test('single UI loads cross-year work and corrections, and shows every incomplete case as pending', async(t)=>{
+  const page=await mount(await fixture(t),sample());
+  assert.equal(page.get('timeline-grid').hidden,false);
+  assert.equal(page.get('retry').hidden,true);
+  assert.equal(page.get('pending-section').hidden,false);
+  assert.equal(page.get('pending-count').textContent,'3');
+  assert.match(page.get('pending-projects').textContent,/C-904/);
+  assert.match(page.get('pending-projects').textContent,/C-905/);
+  assert.match(page.get('pending-projects').textContent,/BG-902/);
+  assert.ok(page.get('timeline-canvas').querySelectorAll('.correction').length);
+  assert.match(page.get('timeline-canvas').textContent,/2027/);
+  assert.equal(page.document.getElementById('search'),null);
+  assert.equal(page.document.getElementById('assignment-form'),null);
+  assert.deepEqual(page.calls,[[]]);
 });
-
-test('language preference survives reopening and a blocked store still permits switching', async (t) => {
-  const built = await fixture(t);
-  const preferences = new Map([['pm-studio-language', 'en']]);
-  let page = await mount(built.html, built.value, { preferences });
-  assert.equal(page.document.documentElement.lang, 'en');
-  assert.equal(page.get('today-button').textContent, 'Today');
-  await page.click('language-toggle');
-  assert.equal(preferences.get('pm-studio-language'), 'zh-Hant');
-  page = await mount(built.html, built.value, { preferences });
-  assert.equal(page.document.documentElement.lang, 'zh-Hant');
-  assert.equal(page.get('today-button').textContent, '今天');
-  page = await mount(built.html, built.value, { preferences: new Map([['pm-studio-language', 'unsupported']]) });
-  assert.equal(page.document.documentElement.lang, 'zh-Hant');
-  page = await mount(built.html, built.value, { blockedStorage: true });
-  await page.click('language-toggle');
-  assert.equal(page.document.documentElement.lang, 'en');
-  assert.equal(page.get('today-button').textContent, 'Today');
-  await page.click('language-toggle');
-  assert.equal(page.document.documentElement.lang, 'zh-Hant');
-});
-
-test('switching language preserves search, navigation, scroll, zoom, and an open project dialog', async (t) => {
-  const built = await fixture(t);
-  const page = await mount(built.html, built.value);
-  await page.click('week-view');
-  await page.click('past-toggle');
-  page.input('search', built.value.projects[0].goal);
-  page.get('timeline-viewport').scrollLeft = 360;
+test('language changes and persists without rereading, renaming project IDs, or losing scroll',async(t)=>{
+  const value=sample(), original=JSON.stringify(value);
+  const html=await fixture(t), page=await mount(html,value);
+  page.get('timeline-viewport').scrollLeft=360;
   page.get('timeline-viewport').listeners.get('scroll')();
-  const range = page.get('date-range').textContent;
-  await page.get('timeline-canvas').querySelector('.project-card').click();
-  assert.equal(page.get('project-dialog').open, true);
+  const range=page.get('date-range').textContent;
   await page.click('language-toggle');
-  assert.equal(page.get('search').value, built.value.projects[0].goal);
-  assert.equal(page.get('timeline-viewport').scrollLeft, 360);
-  assert.equal(page.get('date-range').textContent, range);
-  assert.equal(page.get('week-view').getAttribute('aria-pressed'), 'true');
-  assert.equal(page.get('past-toggle').getAttribute('aria-pressed'), 'true');
-  assert.doesNotMatch(page.get('past-toggle').textContent, /[\u3400-\u9fff]/u);
-  assert.equal(page.get('project-dialog').open, true);
-  assert.equal(page.get('detail-title').textContent, built.value.projects[0].alias);
-  const labels = page.get('detail-content').querySelectorAll('.detail-label').map((node) => node.textContent);
-  assert.deepEqual(labels, ['Delivery goal', 'Schedule dates', 'Workspace']);
-  assert.equal(page.get('detail-content').querySelector('.detail-value').textContent, built.value.projects[0].goal);
-  assert.match(page.get('close-dialog').getAttribute('aria-label'), /close/i);
-  const dayLabels = page.get('timeline-canvas').querySelectorAll('.day-label').map((node) => node.textContent);
-  assert.ok(dayLabels.some((label) => /Sun|Mon|Tue|Wed|Thu|Fri|Sat/.test(label)));
-  assert.ok(dayLabels.every((label) => !/[日一二三四五六]/u.test(label)));
-  assert.equal(page.calls.length, 1);
-  await page.click('language-toggle');
-  assert.equal(page.get('project-dialog').open, true);
-  assert.equal(page.get('detail-content').querySelector('.detail-label').textContent, '交付目標');
-  assert.equal(page.get('timeline-viewport').scrollLeft, 360);
+  assert.equal(page.document.documentElement.lang,'en');
+  assert.equal(page.get('today-button').textContent,'Today');
+  assert.equal(page.get('language-toggle').textContent,'繁體中文');
+  assert.equal(page.preferences.get('pm-studio-language'),'en');
+  assert.equal(page.get('timeline-viewport').scrollLeft,360);
+  assert.equal(page.get('date-range').textContent,range);
+  assert.doesNotMatch(page.get('workspace-labels').textContent,/[\u3400-\u9fff]/u);
+  assert.doesNotMatch(page.get('pending-projects').textContent,/[\u3400-\u9fff]/u);
+  assert.match(page.get('timeline-canvas').textContent,/C-901/);
+  assert.match(page.get('timeline-canvas').textContent,/TEST-01/);
+  assert.match(page.get('sync-status').textContent,/21\/12\/2026, 12:00/);
+  assert.equal(page.calls.length,1);
+  assert.equal(JSON.stringify(value),original);
+  const reopened=await mount(html,value,{preferences:page.preferences});
+  assert.equal(reopened.document.documentElement.lang,'en');
+  const blocked=await mount(html,value,{blockedStorage:true});
+  await blocked.click('language-toggle');
+  assert.equal(blocked.document.documentElement.lang,'en');
 });
-
-test('theme controls follow the selected language and keep theme and language preferences independent', async (t) => {
-  const built = await fixture(t);
-  const page = await mount(built.html, built.value, { preferences: new Map([['pm-studio-language', 'en']]) });
-  assert.equal(page.document.documentElement.dataset.theme, 'dark');
-  assert.equal(page.get('theme-toggle').textContent, 'Light mode');
-  await page.click('theme-toggle');
-  assert.equal(page.document.documentElement.dataset.theme, 'light');
-  assert.equal(page.get('theme-toggle').textContent, 'Dark mode');
-  assert.equal(page.get('theme-toggle').getAttribute('aria-label'), 'Dark mode');
-  assert.equal(page.preferences.get('pm-studio-theme'), 'light');
-  assert.equal(page.preferences.get('pm-studio-language'), 'en');
-  await page.click('language-toggle');
-  assert.equal(page.get('theme-toggle').textContent, '切換暗色');
-  assert.equal(page.document.documentElement.dataset.theme, 'light');
-  await page.click('language-toggle');
-  assert.equal(page.get('theme-toggle').textContent, 'Dark mode');
-  assert.equal(page.document.documentElement.dataset.theme, 'light');
+test('date navigation works at narrow widths and across years; Today restores the initial range',async(t)=>{
+  const page=await mount(await fixture(t),sample(),{width:240});
+  const initial=page.get('date-range').textContent;
+  assert.equal(initial,'2026-12-17 — 2026-12-28');
+  await page.click('next');
+  assert.equal(page.get('date-range').textContent,'2026-12-27 — 2027-01-07');
+  await page.click('previous');
+  assert.equal(page.get('date-range').textContent,initial);
+  for(let i=0;i<40;i++)await page.click('previous');
+  assert.match(page.get('date-range').textContent,/2025/);
+  await page.click('today-button');
+  assert.equal(page.get('date-range').textContent,initial);
+  assert.equal(page.calls.length,1);
 });
-
-test('English empty, failed-refresh, previous-publication, and retry notices remain accurate when language changes', async (t) => {
-  const built = await fixture(t, snapshot([]));
-  const page = await mount(built.html, built.value, { preferences: new Map([['pm-studio-language', 'en']]) });
-  assert.match(page.get('notification').textContent, /no .*published/i);
-  assert.doesNotMatch(page.get('notification').textContent, /[\u3400-\u9fff]/u);
-  assert.match(page.get('sync-status').textContent, /last published/i);
-  assert.match(page.get('sync-status').textContent, /2026-10-12 12:00/);
-  page.fail(true);
-  await page.click('refresh');
-  assert.match(page.get('sync-status').textContent, /failed.*previous/i);
-  assert.match(page.get('notification').textContent, /last successfully loaded|previous/i);
-  assert.equal(page.get('notification').classList.contains('error'), true);
+test('initial service failure has no demo fallback; retry recovers and private errors never render',async(t)=>{
+  const page=await mount(await fixture(t),sample(),{failInitially:true});
+  assert.equal(page.get('timeline-grid').hidden,true);
+  assert.equal(page.get('retry').hidden,false);
+  assert.equal(page.get('previous').disabled,true);
+  assert.equal(page.get('pending-section').hidden,true);
+  assert.doesNotMatch(page.get('load-notice').textContent,/PRIVATE/);
   await page.click('language-toggle');
-  assert.match(page.get('sync-status').textContent, /^讀取失敗 · 上次發布/);
-  assert.match(page.get('notification').textContent, /上次成功讀取的資料/);
-  await page.click('week-view');
-  await page.click('language-toggle');
-  assert.match(page.get('sync-status').textContent, /failed.*previous/i);
-  assert.match(page.get('notification').textContent, /last successfully loaded|previous/i);
-  assert.equal(page.calls.length, 2);
+  assert.match(page.get('load-message').textContent,/Unable to load/);
   page.fail(false);
-  await page.click('refresh');
-  assert.match(page.get('sync-status').textContent, /last published/i);
-  assert.match(page.get('notification').textContent, /no .*published/i);
-  assert.equal(page.get('notification').classList.contains('error'), false);
-  assert.equal(page.get('refresh').disabled, false);
-  const initialFailure = await mount(built.html, built.value, { failInitially: true, preferences: new Map([['pm-studio-language', 'en']]) });
-  assert.doesNotMatch(initialFailure.get('notification').textContent, /[\u3400-\u9fff]/u);
-  assert.doesNotMatch(initialFailure.get('sync-status').textContent, /[\u3400-\u9fff]/u);
+  await page.click('retry');
+  assert.equal(page.get('timeline-grid').hidden,false);
+  assert.equal(page.get('retry').hidden,true);
+  assert.equal(page.get('load-notice').hidden,true);
+  assert.equal(page.get('previous').disabled,false);
+  assert.equal(page.calls.length,2);
 });
-
-test('the independent public Apps Script bundle also switches language using only its read bridge', async (t) => {
-  const built = await fixture(t);
-  const bundles = await buildGoogleUi({ outputDir: resolve(built.directory, 'google'), packageDir: null, views: ['public'] });
-  const googlePayload = { mode: 'public', today: '2026-10-13', syncedAt: built.value.publishedAt,
-    projects: [...built.value.projects, { ...approvedProject(), alias: '專案 002', start: '2026-11', end: '', workspaceIds: [], workspaceUnits: {} }],
-    workspaces: WORKSPACES, permissions: { canEditLayout: false } };
-  const page = await mount(bundles[0].html, built.value, { googlePayload });
-  await page.click('language-toggle');
-  assert.equal(page.document.documentElement.lang, 'en');
-  assert.equal(page.get('today-button').textContent, 'Today');
-  assert.doesNotMatch(page.get('workspace-labels').textContent, /[\u3400-\u9fff]/u);
-  assert.equal(page.get('pending-section').hidden, false);
-  assert.doesNotMatch(page.get('pending-count').textContent, /[\u3400-\u9fff]/u);
-  assert.doesNotMatch(page.get('pending-projects').querySelector('.pending-meta').textContent, /[\u3400-\u9fff]/u);
-  assert.match(page.get('pending-projects').querySelector('.pending-meta').textContent, /2026-11/);
-  assert.deepEqual(page.calls, [[]]);
-  assert.equal(page.document.getElementById('assignment-form'), null);
-  assert.doesNotMatch(bundles[0].html, /saveLayout|publishApprovedSnapshot|sourceUrl/);
+test('malformed records fail closed while a valid empty schedule remains explicitly empty',async(t)=>{
+  const html=await fixture(t);
+  const malformed=sample();malformed.projects[0].name='PRIVATE_NAME';
+  const page=await mount(html,malformed);
+  assert.equal(page.get('timeline-grid').hidden,true);
+  assert.equal(page.get('retry').hidden,false);
+  assert.doesNotMatch(page.document.querySelector('main').textContent,/PRIVATE_NAME/);
+  const empty=sample();empty.projects=[];
+  const emptyPage=await mount(html,empty,{preferences:new Map([['pm-studio-language','en']])});
+  assert.equal(emptyPage.get('timeline-grid').hidden,false);
+  assert.match(emptyPage.get('load-message').textContent,/No projects/);
+  assert.equal(emptyPage.get('retry').hidden,true);
+  assert.equal(emptyPage.get('pending-section').hidden,true);
 });
