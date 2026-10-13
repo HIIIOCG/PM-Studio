@@ -1,4 +1,5 @@
 import { planBlocks, getProjectDates } from '/timeline-core.mjs';
+import { t, workspaceDescription, unitText, weekdayText } from '/localization.mjs';
 
 const DAY = 86_400_000;
 const AXIS_HEIGHT = 76;
@@ -126,18 +127,18 @@ function renderTimeline(preserveScroll = false) {
   const canvas = $('timeline-canvas');
   canvas.replaceChildren(); canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
   const labels = $('workspace-labels');
-  labels.replaceChildren(create('div', 'label-axis', '工作區'));
+  labels.replaceChildren(create('div', 'label-axis', t('workspace')));
   for (const row of rows) {
     const label = create('div', 'workspace-label'); label.style.height = `${row.height}px`;
-    label.append(create('span', 'workspace-name', '工作區'), create('strong', '', row.id));
-    if (row.name && row.name !== `工作區 ${row.id}`) label.append(create('span', 'workspace-name', row.name.replace(new RegExp(`\\s+${row.id}$`), '')));
-    if (Number.isFinite(row.usualLoad)) label.append(create('span', 'capacity-note', `一般負荷 ${row.usualLoad} ${row.unit || '項目'}，可彈性安排`));
-    else if (row.id === 'C') label.append(create('span', 'capacity-note', '彈性安排，容量待確認'));
-    else if (Number.isFinite(row.capacity)) label.append(create('span', 'capacity-note', `最多 ${row.capacity} ${row.unit || '項目'}`));
-    if (row.overlaps) label.append(create('span', 'overlap-note', '超過一般負荷，請確認安排'));
+    label.append(create('span', 'workspace-name', t('workspace')), create('strong', '', row.id));
+    if (row.name && row.name !== `工作區 ${row.id}`) label.append(create('span', 'workspace-name', workspaceDescription(row)));
+    if (Number.isFinite(row.usualLoad)) label.append(create('span', 'capacity-note', t('usualLoad', { count: row.usualLoad, unit: unitText(row, row.usualLoad) })));
+    else if (row.id === 'C') label.append(create('span', 'capacity-note', t('flexibleCapacity')));
+    else if (Number.isFinite(row.capacity)) label.append(create('span', 'capacity-note', t('maxCapacity', { count: row.capacity, unit: unitText(row, row.capacity) })));
+    if (row.overlaps) label.append(create('span', 'overlap-note', t('overload')));
     labels.append(label);
     const rule = create('div', 'workspace-rule'); rule.style.top = `${row.top + row.height}px`; canvas.append(rule);
-    if (!items.some((item) => item.indexes.includes(rows.indexOf(row)) && item.range.start <= endDay && item.range.end >= startDay)) { const empty = create('span', 'empty-row-label', '目前區間未排工作'); empty.style.top = `${row.top + row.height / 2 - 8}px`; canvas.append(empty); }
+    if (!items.some((item) => item.indexes.includes(rows.indexOf(row)) && item.range.start <= endDay && item.range.end >= startDay)) { const empty = create('span', 'empty-row-label', t('emptyRange')); empty.style.top = `${row.top + row.height / 2 - 8}px`; canvas.append(empty); }
   }
   const axis = create('div', 'time-axis');
   let lastMonthLabelX = -Infinity;
@@ -149,7 +150,7 @@ function renderTimeline(preserveScroll = false) {
     if (weekday === 0 || weekday === 6) { const shade = create('div', 'weekend-shade'); shade.style.left = `${x}px`; shade.style.width = `${pixelsPerDay}px`; canvas.append(shade); }
     if (monthStart || index === 0 || state.zoom === 'week' || weekday === 1) { const line = create('div', `grid-line${monthStart ? ' major-line' : ''}`); line.style.left = `${x}px`; canvas.append(line); }
     if ((monthStart || index === 0) && x - lastMonthLabelX >= 90) { const month = create('span', 'month-label', `${date.getUTCFullYear()} / ${String(date.getUTCMonth() + 1).padStart(2, '0')}`); month.style.left = `${x}px`; axis.append(month); lastMonthLabelX = x; }
-    if ((state.zoom === 'week' || weekday === 1 || index === 0) && x - lastDayLabelX >= (state.zoom === 'week' ? 32 : 39)) { const text = state.zoom === 'week' ? `${date.getUTCDate()} ${['日', '一', '二', '三', '四', '五', '六'][weekday]}` : `${date.getUTCMonth() + 1}/${date.getUTCDate()}`; const tick = create('span', `day-label${weekday === 0 || weekday === 6 ? ' weekend-label' : ''}`, text); tick.style.left = `${x}px`; axis.append(tick); lastDayLabelX = x; }
+    if ((state.zoom === 'week' || weekday === 1 || index === 0) && x - lastDayLabelX >= (state.zoom === 'week' ? 32 : 39)) { const text = state.zoom === 'week' ? `${date.getUTCDate()} ${weekdayText(weekday)}` : `${date.getUTCMonth() + 1}/${date.getUTCDate()}`; const tick = create('span', `day-label${weekday === 0 || weekday === 6 ? ' weekend-label' : ''}`, text); tick.style.left = `${x}px`; axis.append(tick); lastDayLabelX = x; }
   }
   canvas.append(axis);
   const visibleCases = new Set();
@@ -164,12 +165,12 @@ function renderTimeline(preserveScroll = false) {
     const cardWidth = (Math.min(item.range.end, endDay) - Math.max(item.range.start, startDay) + 1) * pixelsPerDay - 8;
     const card = makeCard(item.project, item.indexes.length > 1, cardWidth, item.phase, item.attached, item.indexes.map((index) => spaces[index].id), item.splitCross);
     Object.assign(card.style, { left: `${x * pixelsPerDay + 4}px`, top: `${item.attached ? cardTop + cardHeight - 45 : cardTop}px`, width: `${Math.max(17, cardWidth)}px`, height: `${item.attached ? 41 : cardHeight}px` });
-    if (item.range.start < startDay) { const heading = card.querySelector('.card-heading'); heading.textContent = `← ${heading.textContent}`; card.title = `開始日期：${fromDay(item.range.start)}`; }
+    if (item.range.start < startDay) { const heading = card.querySelector('.card-heading'); heading.textContent = `← ${heading.textContent}`; card.title = t('startDate', { date: fromDay(item.range.start) }); }
     canvas.append(card);
   }
   const todayDay = dayNumber(today);
-  if (todayDay >= startDay && todayDay <= endDay) { const line = create('div', 'today-line'); line.style.left = `${(todayDay - startDay) * pixelsPerDay + 1}px`; line.append(create('span', 'today-label', `今天 ${shortDate(today)}`)); canvas.append(line); }
-  $('visible-count').textContent = `${visibleCases.size} 案在目前區間${rows.some((row) => row.overlaps) ? ' · 有工作區超過一般負荷，請確認安排' : ''}`;
+  if (todayDay >= startDay && todayDay <= endDay) { const line = create('div', 'today-line'); line.style.left = `${(todayDay - startDay) * pixelsPerDay + 1}px`; line.append(create('span', 'today-label', t('todayDate', { date: shortDate(today) }))); canvas.append(line); }
+  $('visible-count').textContent = t('visibleCount', { count: visibleCases.size }) + (rows.some((row) => row.overlaps) ? t('visibleOverload') : '');
   state.renderedDayWidth = pixelsPerDay;
   $('timeline-viewport').scrollLeft = previousOffsetDays * pixelsPerDay;
   updateDateRange();

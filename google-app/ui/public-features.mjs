@@ -9,12 +9,12 @@ function makeCard(project, cross, width, phase = 'production', attached = false,
   const start = phase === 'correction' ? project.correctionStart : project.start;
   const end = phase === 'correction' ? project.correctionEnd : project.end;
   const renderIds = segmentIds.length ? segmentIds : project.workspaceIds;
-  card.setAttribute('aria-label', `${project.alias}，${phase === 'correction' ? '追加修正' : project.goal || '製作排程'}，${dateText(start)} 至 ${dateText(end)}，工作區 ${renderIds.join('、')}`);
-  card.append(create('span', 'card-heading', phase === 'correction' ? `${project.alias} · 追加修正` : project.alias));
+  card.setAttribute('aria-label', t('cardLabel', { alias: project.alias, goal: phase === 'correction' ? t('correction') : project.goal || t('productionSchedule'), start: dateText(start), end: dateText(end), areas: renderIds.join(', ') }));
+  card.append(create('span', 'card-heading', phase === 'correction' ? `${project.alias} · ${t('correction')}` : project.alias));
   if (!attached) {
-    card.append(create('span', 'card-goal', project.goal || '製作排程'));
-    const areaText = renderIds.map((id) => { const space = workspaces().find((item) => item.id === id); return `${id}（${workspaceUnits(project, space || { id })} ${space?.unit || '項目'}）`; }).join(' ＋ ');
-    card.append(create('span', 'cross-label', splitCross ? `同案跨區 ${project.workspaceIds.join(' ＋ ')} · 本段 ${areaText}` : `工作區 ${areaText}`));
+    card.append(create('span', 'card-goal', project.goal || t('productionSchedule')));
+    const areaText = renderIds.map((id) => { const space = workspaces().find((item) => item.id === id); const count = workspaceUnits(project, space || { id }); return `${id}（${count} ${unitText(space, count)}）`; }).join(' ＋ ');
+    card.append(create('span', 'cross-label', splitCross ? t('crossWorkspace', { all: project.workspaceIds.join(' ＋ '), areas: areaText }) : t('workspaceAllocation', { areas: areaText })));
     const bottom = create('span', 'card-bottom');
     bottom.append(create('span', 'card-dates', `${dateText(start)} → ${dateText(end)}`));
     card.append(bottom);
@@ -24,12 +24,13 @@ function makeCard(project, cross, width, phase = 'production', attached = false,
 }
 
 function openProject(project) {
-  $('detail-id').textContent = '製作排程';
+  state.activeProject = project;
+  $('detail-id').textContent = t('productionSchedule');
   $('detail-title').textContent = project.alias;
   $('detail-content').replaceChildren();
-  detailRow('交付目標', project.goal || '製作排程');
-  detailRow('排程日期', `${dateText(project.start)} → ${dateText(project.end)}`);
-  if (project.correctionStart || project.correctionEnd) detailRow('追加修正', `${dateText(project.correctionStart)} → ${dateText(project.correctionEnd)}`);
-  detailRow('工作區', project.workspaceIds.map((id) => { const space = workspaces().find((item) => item.id === id); return `${id}（${workspaceUnits(project, space || { id })} ${space?.unit || '項目'}）`; }).join(' ＋ ') || '待安排');
-  $('project-dialog').showModal();
+  detailRow(t('deliveryGoal'), project.goal || t('productionSchedule'));
+  detailRow(t('scheduleDates'), `${dateText(project.start)} → ${dateText(project.end)}`);
+  if (project.correctionStart || project.correctionEnd) detailRow(t('correction'), `${dateText(project.correctionStart)} → ${dateText(project.correctionEnd)}`);
+  detailRow(t('workspace'), project.workspaceIds.map((id) => { const space = workspaces().find((item) => item.id === id); const count = workspaceUnits(project, space || { id }); return `${id}（${count} ${unitText(space, count)}）`; }).join(' ＋ ') || t('pending'));
+  if (!$('project-dialog').open) $('project-dialog').showModal();
 }

@@ -11,8 +11,8 @@
 <body>
   <main class="app">
     <header class="app-header">
-      <div><p class="brand">HIIIO DIGITAL <span>／ PM Studio</span></p><h1>工作區排程</h1></div>
-      <div class="header-actions"><span id="sync-status" class="sync-status" role="status">正在讀取排程</span><button id="theme-toggle" class="quiet-button theme-toggle" aria-label="切換亮色" aria-pressed="true">切換亮色</button><button id="refresh" class="quiet-button" aria-label="重新讀取專案資料">重新讀取</button><a id="source-link" class="quiet-button source-link" target="_blank" rel="noopener noreferrer" hidden>專案列表 ↗</a></div>
+      <div><p class="brand">HIIIO DIGITAL <span>／ PM Studio</span></p><h1 id="schedule-title">工作區排程</h1></div>
+      <div class="header-actions"><span id="sync-status" class="sync-status" role="status">正在讀取排程</span><button id="theme-toggle" class="quiet-button theme-toggle" aria-label="切換亮色" aria-pressed="true">切換亮色</button><button id="refresh" class="quiet-button" aria-label="重新讀取專案資料">重新讀取</button><a id="source-link" class="quiet-button source-link" target="_blank" rel="noopener noreferrer" hidden>專案列表 ↗</a><button id="language-toggle" class="quiet-button language-toggle" lang="en" aria-label="Switch to English">English</button></div>
     </header>
 
     <div class="mode-bar">
@@ -22,21 +22,21 @@
 
     <div id="notification" class="notification" role="status" hidden></div>
 
-    <section class="schedule" aria-label="工作區時間排程">
+    <section id="schedule-section" class="schedule" aria-label="工作區時間排程">
       <div class="toolbar">
         <div class="date-navigation"><button id="previous" class="arrow-button" aria-label="往前查看日期">←</button><button id="next" class="arrow-button" aria-label="往後查看日期">→</button><button id="today-button" class="plain-button">今天</button><strong id="date-range">—</strong></div>
-        <div class="view-controls"><div class="segmented" role="group" aria-label="時間縮放"><button id="month-view" aria-pressed="true">月</button><button id="week-view" aria-pressed="false">週</button></div><button id="past-toggle" class="plain-button" aria-pressed="false">展開過去日期</button></div>
+        <div class="view-controls"><div id="time-scale-controls" class="segmented" role="group" aria-label="時間縮放"><button id="month-view" aria-pressed="true">月</button><button id="week-view" aria-pressed="false">週</button></div><button id="past-toggle" class="plain-button" aria-pressed="false">展開過去日期</button></div>
       </div>
-      <div class="filter-bar"><label class="search-box"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜尋案號、專案、製作項目" aria-label="搜尋案號、專案、製作項目"></label><div class="legend"><span><i class="production-key"></i>製作</span><span><i class="correction-key"></i>追加修正</span><span class="today-key">│ 今天</span></div></div>
+      <div class="filter-bar"><label class="search-box"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜尋案號、專案、製作項目" aria-label="搜尋案號、專案、製作項目"></label><div class="legend"><span><i class="production-key"></i><span id="legend-production">製作</span></span><span><i class="correction-key"></i><span id="legend-correction">追加修正</span></span><span id="legend-today" class="today-key">│ 今天</span></div></div>
       <div id="timeline-grid" class="timeline-grid">
         <div id="workspace-labels" class="workspace-labels" aria-hidden="true"></div>
         <div id="timeline-viewport" class="timeline-viewport" tabindex="0" aria-label="時間軸，可左右捲動"><div id="timeline-canvas" class="timeline-canvas"></div></div>
       </div>
-      <div class="timeline-footer"><span id="visible-count"></span><span>左右捲動查看日期 · 點選方塊查看完整資訊</span></div>
+      <div class="timeline-footer"><span id="visible-count"></span><span id="timeline-help">左右捲動查看日期 · 點選方塊查看完整資訊</span></div>
     </section>
 
     <section id="pending-section" class="pending-section" hidden aria-labelledby="pending-title"><div class="section-heading"><div><h2 id="pending-title">待安排</h2><p id="pending-description">尚未指定工作區，或製作／修正日期仍需安排。</p></div><span id="pending-count" class="count-badge"></span></div><div id="pending-projects" class="pending-projects"></div></section>
-    <footer class="page-footer">工作區安排保存在本機；專案日期與狀態以專案列表為準。</footer>
+    <footer id="page-footer" class="page-footer">工作區安排保存在本機；專案日期與狀態以專案列表為準。</footer>
   </main>
 
   <dialog id="project-dialog" class="project-dialog" aria-labelledby="detail-title">

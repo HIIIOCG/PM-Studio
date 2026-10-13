@@ -2,7 +2,7 @@
 
 PM Studio shares our production schedule for 3D characters, environments, and game art.
 
-Explore the timeline by week or month, search projects, and open a project to see its published goal, dates, and workspaces. Light and dark themes are available.
+Explore the timeline by week or month, search projects, and open a project to see its published goal, dates, and workspaces. Light and dark themes are available. Switch between Traditional Chinese and English in the upper-right corner; the site remembers your preference. Approved project names and goals remain in their published language.
 
 Public schedules contain only reviewed anonymous project information and show the last publication time. Contact our team to discuss your project and confirm availability. An empty time span does not reserve production time; every booking requires team confirmation.
 

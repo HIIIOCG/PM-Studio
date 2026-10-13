@@ -138,6 +138,13 @@ h1 { margin: 0; font-size: 29px; font-weight: 700; letter-spacing: -.8px; }
 .quiet-button:hover { color: var(--link); }
 .theme-toggle { padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); color: var(--text); }
 .theme-toggle:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+.language-toggle { align-self: flex-start; white-space: nowrap; padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); color: var(--text); }
+.language-toggle:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+.header-actions { flex-wrap: wrap; justify-content: flex-end; }
+html[lang="en"] .day-label { font-size: 10px; }
+html[lang="en"] .workspace-label { overflow-wrap: anywhere; }
+@media (max-width: 900px) { .language-toggle { order: -2; }.sync-status { order: -1; }.header-actions .language-toggle { margin-left: auto; } }
+@media (max-width: 560px) { html[lang="en"] .timeline-grid { grid-template-columns: 100px minmax(0, 1fr); } }
 .mode-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; margin-bottom: 20px; }
 .mode-bar p { margin: 0; color: var(--muted); font-size: 13px; }
 .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; padding: 3px; background: var(--surface-raised); flex-shrink: 0; }
@@ -258,8 +265,8 @@ h1 { margin: 0; font-size: 29px; font-weight: 700; letter-spacing: -.8px; }
 <body>
   <main class="app">
     <header class="app-header">
-      <div><p class="brand">HIIIO DIGITAL <span>／ PM Studio</span></p><h1>工作區排程</h1></div>
-      <div class="header-actions"><span id="sync-status" class="sync-status" role="status">正在讀取排程</span><button id="theme-toggle" class="quiet-button theme-toggle" aria-label="切換亮色" aria-pressed="true">切換亮色</button><button id="refresh" class="quiet-button" aria-label="重新讀取專案資料">重新讀取</button></div>
+      <div><p class="brand">HIIIO DIGITAL <span>／ PM Studio</span></p><h1 id="schedule-title">工作區排程</h1></div>
+      <div class="header-actions"><span id="sync-status" class="sync-status" role="status">正在讀取排程</span><button id="theme-toggle" class="quiet-button theme-toggle" aria-label="切換亮色" aria-pressed="true">切換亮色</button><button id="refresh" class="quiet-button" aria-label="重新讀取專案資料">重新讀取</button><button id="language-toggle" class="quiet-button language-toggle" lang="en" aria-label="Switch to English">English</button></div>
     </header>
 
     <div class="mode-bar">
@@ -269,21 +276,21 @@ h1 { margin: 0; font-size: 29px; font-weight: 700; letter-spacing: -.8px; }
 
     <div id="notification" class="notification" role="status" hidden></div>
 
-    <section class="schedule" aria-label="工作區時間排程">
+    <section id="schedule-section" class="schedule" aria-label="工作區時間排程">
       <div class="toolbar">
         <div class="date-navigation"><button id="previous" class="arrow-button" aria-label="往前查看日期">←</button><button id="next" class="arrow-button" aria-label="往後查看日期">→</button><button id="today-button" class="plain-button">今天</button><strong id="date-range">—</strong></div>
-        <div class="view-controls"><div class="segmented" role="group" aria-label="時間縮放"><button id="month-view" aria-pressed="true">月</button><button id="week-view" aria-pressed="false">週</button></div><button id="past-toggle" class="plain-button" aria-pressed="false">展開過去日期</button></div>
+        <div class="view-controls"><div id="time-scale-controls" class="segmented" role="group" aria-label="時間縮放"><button id="month-view" aria-pressed="true">月</button><button id="week-view" aria-pressed="false">週</button></div><button id="past-toggle" class="plain-button" aria-pressed="false">展開過去日期</button></div>
       </div>
-      <div class="filter-bar"><label class="search-box"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜尋專案或交付目標" aria-label="搜尋專案或交付目標"></label><div class="legend"><span><i class="production-key"></i>製作</span><span><i class="correction-key"></i>追加修正</span><span class="today-key">│ 今天</span></div></div>
+      <div class="filter-bar"><label class="search-box"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜尋專案或交付目標" aria-label="搜尋專案或交付目標"></label><div class="legend"><span><i class="production-key"></i><span id="legend-production">製作</span></span><span><i class="correction-key"></i><span id="legend-correction">追加修正</span></span><span id="legend-today" class="today-key">│ 今天</span></div></div>
       <div id="timeline-grid" class="timeline-grid">
         <div id="workspace-labels" class="workspace-labels" aria-hidden="true"></div>
         <div id="timeline-viewport" class="timeline-viewport" tabindex="0" aria-label="時間軸，可左右捲動"><div id="timeline-canvas" class="timeline-canvas"></div></div>
       </div>
-      <div class="timeline-footer"><span id="visible-count"></span><span>左右捲動查看日期 · 點選方塊查看完整資訊</span></div>
+      <div class="timeline-footer"><span id="visible-count"></span><span id="timeline-help">左右捲動查看日期 · 點選方塊查看完整資訊</span></div>
     </section>
 
     <section id="pending-section" class="pending-section" hidden aria-labelledby="pending-title"><div class="section-heading"><div><h2 id="pending-title">待安排</h2><p id="pending-description">尚未指定工作區，或製作／修正日期仍需安排。</p></div><span id="pending-count" class="count-badge"></span></div><div id="pending-projects" class="pending-projects"></div></section>
-    <footer class="page-footer">檔期預留依團隊確認。</footer>
+    <footer id="page-footer" class="page-footer">檔期預留依團隊確認。</footer>
   </main>
 
   <dialog id="project-dialog" class="project-dialog" aria-labelledby="detail-title">
@@ -295,6 +302,7 @@ h1 { margin: 0; font-size: 29px; font-weight: 700; letter-spacing: -.8px; }
   <script>// Generated from PM Studio UI sources. No project records are embedded.
 (async () => {
 const APP_VIEW = "public";
+const APP_TRANSPORT = "google";
 const DAY_MS = 86400000;
 const text = value => value == null ? '' : String(value).trim();
 const has = value => text(value) !== '';
@@ -483,6 +491,146 @@ function createGoogleBridge(view, api = globalThis.google?.script?.run) {
   };
 }
 
+const UI_TEXT = {
+  title: ['工作區排程', 'Workspace schedule'],
+  publicTitle: ['PM Studio｜公開排程', 'PM Studio | Public schedule'],
+  workspace: ['工作區', 'Workspace'],
+  scheduleLabel: ['工作區時間排程', 'Workspace production timeline'],
+  timelineLabel: ['時間軸，可左右捲動', 'Timeline; scroll horizontally to explore dates'],
+  zoomLabel: ['時間縮放', 'Timeline scale'],
+  previous: ['往前查看日期', 'View earlier dates'],
+  next: ['往後查看日期', 'View later dates'],
+  today: ['今天', 'Today'],
+  month: ['月', 'Month'],
+  week: ['週', 'Week'],
+  expandPast: ['展開過去日期', 'Show past dates'],
+  collapsePast: ['收合過去日期', 'Hide past dates'],
+  lightMode: ['切換亮色', 'Light mode'],
+  darkMode: ['切換暗色', 'Dark mode'],
+  refresh: ['重新讀取', 'Refresh'],
+  refreshLabel: ['重新讀取公開排程', 'Reload the public schedule'],
+  search: ['搜尋專案或交付目標', 'Search projects or delivery goals'],
+  production: ['製作', 'Production'],
+  productionSchedule: ['製作排程', 'Production schedule'],
+  correction: ['追加修正', 'Additional revisions'],
+  timelineHelp: ['左右捲動查看日期 · 點選方塊查看完整資訊', 'Scroll to explore dates · Select a project for details'],
+  pending: ['待安排', 'To be scheduled'],
+  pendingDescription: ['尚未指定工作區，或製作／修正日期仍需安排。', 'Workspace assignments or production/revision dates are awaiting confirmation.'],
+  closeDetails: ['關閉專案詳情', 'Close project details'],
+  publicView: ['公開排程', 'Public schedule'],
+  teamView: ['團隊排程', 'Team schedule'],
+  previewView: ['本機示意預覽', 'Local demo preview'],
+  previewDescription: ['此畫面使用虛構案件，不代表實際檔期。', 'This preview uses fictional projects and does not show actual availability.'],
+  publicDescription: ['選擇合適的時間後，聯繫團隊確認製作需求與預約。', 'Contact our team to discuss your production needs and confirm your preferred dates.'],
+  teamDescription: ['每個方塊代表一段工作；點選案件查看資訊與安排工作區。', 'Each block represents a period of work; select a project for details and workspace assignments.'],
+  publicFooter: ['檔期預留依團隊確認。', 'Schedule reservations require confirmation from our team.'],
+  staticFooter: ['公開排程以團隊確認為準；空白時段不代表可預約。', 'Our team must confirm all bookings. Empty time spans do not indicate available production capacity.'],
+  loading: ['正在讀取排程', 'Loading schedule'],
+  loaded: ['已讀取排程', 'Schedule loaded'],
+  updated: ['已更新', 'Updated'],
+  notLoaded: ['尚未讀取', 'Schedule not loaded'],
+  notLoadedPublic: ['尚未讀取公開排程', 'Public schedule not loaded'],
+  lastPublished: ['最後發布', 'Last published'],
+  previousPublished: ['讀取失敗 · 上次發布', 'Reload failed · Previous publication'],
+  taipeiTime: ['台北時間', 'Taipei time'],
+  publicLoadError: ['無法讀取公開排程，請稍後再試。', 'Unable to load the public schedule. Please try again later.'],
+  publicReloadError: ['無法重新讀取公開排程；目前顯示上次成功讀取的資料，請稍後再試。', 'Unable to reload the public schedule. Showing the last successfully loaded data; please try again later.'],
+  noPublicProjects: ['目前尚無已公開排程；請聯繫團隊確認檔期。', 'No schedules have been published yet. Contact our team to confirm availability.'],
+  emptyPublicRange: ['目前區間無已公開排程', 'No published projects in this period'],
+  emptyRange: ['目前區間未排工作', 'No work scheduled in this period'],
+  unspecified: ['未定', 'To be confirmed'],
+  missing: ['未填', 'Not provided'],
+  unnamed: ['未命名專案', 'Untitled project'],
+  projectCount: ['{count} 案', 'Projects: {count}'],
+  visibleCount: ['{count} 案在目前區間', 'Projects in view: {count}'],
+  visibleOverload: [' · 有工作區超過一般負荷，請確認安排', ' · Workspace load exceeds the usual level; confirm arrangements'],
+  usualLoad: ['一般負荷 {count} {unit}，可彈性安排', 'Usual load: {count} {unit}; flexible allocation'],
+  flexibleCapacity: ['彈性安排，容量待確認', 'Flexible allocation; capacity to be confirmed'],
+  maxCapacity: ['最多 {count} {unit}', 'Up to {count} {unit}'],
+  overload: ['超過一般負荷，請確認安排', 'Above usual load; confirm arrangements'],
+  characters: ['3D角色模型', '3D character models'],
+  charactersScenes: ['角色與場景模型', 'Characters and environments'],
+  ctArt: ['CT 遊戲美術外包', 'CT game art outsourcing'],
+  startDate: ['開始日期：{date}', 'Start date: {date}'],
+  todayDate: ['今天 {date}', 'Today {date}'],
+  deliveryGoal: ['交付目標', 'Delivery goal'],
+  scheduleDates: ['排程日期', 'Schedule dates'],
+  workspaceAllocation: ['工作區 {areas}', 'Workspace {areas}'],
+  crossWorkspace: ['同案跨區 {all} · 本段 {areas}', 'Shared project across {all} · This block: {areas}'],
+  cardLabel: ['{alias}，{goal}，{start} 至 {end}，工作區 {areas}', '{alias}, {goal}, {start} to {end}, workspace {areas}'],
+};
+
+let uiLanguage = 'zh-Hant';
+
+function t(key, values = {}) {
+  const text = UI_TEXT[key][uiLanguage === 'en' ? 1 : 0];
+  return text.replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ''));
+}
+
+function workspaceDescription(space) {
+  const name = space.name?.replace(new RegExp(`\\s+${space.id}$`), '') || '';
+  const key = { '3D角色模型': 'characters', '角色與場景模型': 'charactersScenes', 'CT 遊戲美術外包': 'ctArt' }[name];
+  return key ? t(key) : name;
+}
+
+function unitText(space, count) {
+  if (uiLanguage !== 'en') return space?.unit || '項目';
+  return space?.unit === '角色' ? (count === 1 ? 'character' : 'characters') : (count === 1 ? 'item' : 'items');
+}
+
+function weekdayText(day) {
+  return (uiLanguage === 'en' ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['日', '一', '二', '三', '四', '五', '六'])[day];
+}
+
+function pendingReasonText(reason) {
+  if (uiLanguage !== 'en') return reason;
+  return ({ '尚未分配工作區': 'Workspace not assigned', '排程日期未完整確定': 'Production dates awaiting confirmation', '修正排程待定': 'Revision dates awaiting confirmation', '工作區設定包含未知工作區': 'Workspace assignment includes an unknown workspace' })[reason] || reason;
+}
+
+function applyPublicLanguage() {
+  document.documentElement.lang = uiLanguage;
+  document.title = t('publicTitle');
+  const text = {
+    'schedule-title': 'title', refresh: 'refresh', 'today-button': 'today',
+    'month-view': 'month', 'week-view': 'week', 'legend-production': 'production',
+    'legend-correction': 'correction', 'timeline-help': 'timelineHelp',
+    'pending-title': 'pending', 'pending-description': 'pendingDescription',
+  };
+  for (const [id, key] of Object.entries(text)) { const node = $(id); if (node) node.textContent = t(key); }
+  const labels = {
+    'schedule-section': 'scheduleLabel', 'timeline-viewport': 'timelineLabel',
+    'time-scale-controls': 'zoomLabel', previous: 'previous', next: 'next',
+    refresh: 'refreshLabel', search: 'search', 'close-dialog': 'closeDetails',
+  };
+  for (const [id, key] of Object.entries(labels)) { const node = $(id); if (node) node.setAttribute('aria-label', t(key)); }
+  $('search').placeholder = t('search');
+  $('legend-today').textContent = `│ ${t('today')}`;
+  $('page-footer').textContent = t(APP_TRANSPORT === 'static' ? 'staticFooter' : 'publicFooter');
+  $('view-label').textContent = t('publicView');
+  $('mode-description').textContent = t('publicDescription');
+  $('past-toggle').textContent = t(state.pastExpanded ? 'collapsePast' : 'expandPast');
+  const button = $('language-toggle');
+  button.textContent = uiLanguage === 'en' ? '繁體中文' : 'English';
+  button.lang = uiLanguage === 'en' ? 'zh-Hant' : 'en';
+  button.setAttribute('aria-label', uiLanguage === 'en' ? '切換至繁體中文' : 'Switch to English');
+  updateThemeControl();
+  renderSyncStatus();
+}
+
+function initializeLanguage() {
+  if (APP_VIEW !== 'public') return;
+  try { if (localStorage.getItem('pm-studio-language') === 'en') uiLanguage = 'en'; } catch { /* Language selection works without preference storage. */ }
+  applyPublicLanguage();
+  $('language-toggle').addEventListener('click', () => {
+    uiLanguage = uiLanguage === 'en' ? 'zh-Hant' : 'en';
+    try { localStorage.setItem('pm-studio-language', uiLanguage); } catch { /* Keep the selected language for this visit. */ }
+    applyPublicLanguage();
+    if (state.noticeKey) notifyLocalized(state.noticeKey, state.noticeError);
+    render(true);
+    if (state.activeProject && $('project-dialog').open) openProject(state.activeProject);
+  });
+}
+
 function buildLayout(projects, spaces) {
   const plan = planBlocks(projects, spaces);
   const byId = new Map(projects.map((project) => [project.id, project]));
@@ -524,18 +672,18 @@ function renderTimeline(preserveScroll = false) {
   const canvas = $('timeline-canvas');
   canvas.replaceChildren(); canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
   const labels = $('workspace-labels');
-  labels.replaceChildren(create('div', 'label-axis', '工作區'));
+  labels.replaceChildren(create('div', 'label-axis', t('workspace')));
   for (const row of rows) {
     const label = create('div', 'workspace-label'); label.style.height = `${row.height}px`;
-    label.append(create('span', 'workspace-name', '工作區'), create('strong', '', row.id));
-    if (row.name && row.name !== `工作區 ${row.id}`) label.append(create('span', 'workspace-name', row.name.replace(new RegExp(`\\s+${row.id}$`), '')));
-    if (Number.isFinite(row.usualLoad)) label.append(create('span', 'capacity-note', `一般負荷 ${row.usualLoad} ${row.unit || '項目'}，可彈性安排`));
-    else if (row.id === 'C') label.append(create('span', 'capacity-note', '彈性安排，容量待確認'));
-    else if (Number.isFinite(row.capacity)) label.append(create('span', 'capacity-note', `最多 ${row.capacity} ${row.unit || '項目'}`));
-    if (row.overlaps) label.append(create('span', 'overlap-note', '超過一般負荷，請確認安排'));
+    label.append(create('span', 'workspace-name', t('workspace')), create('strong', '', row.id));
+    if (row.name && row.name !== `工作區 ${row.id}`) label.append(create('span', 'workspace-name', workspaceDescription(row)));
+    if (Number.isFinite(row.usualLoad)) label.append(create('span', 'capacity-note', t('usualLoad', { count: row.usualLoad, unit: unitText(row, row.usualLoad) })));
+    else if (row.id === 'C') label.append(create('span', 'capacity-note', t('flexibleCapacity')));
+    else if (Number.isFinite(row.capacity)) label.append(create('span', 'capacity-note', t('maxCapacity', { count: row.capacity, unit: unitText(row, row.capacity) })));
+    if (row.overlaps) label.append(create('span', 'overlap-note', t('overload')));
     labels.append(label);
     const rule = create('div', 'workspace-rule'); rule.style.top = `${row.top + row.height}px`; canvas.append(rule);
-    if (!items.some((item) => item.indexes.includes(rows.indexOf(row)) && item.range.start <= endDay && item.range.end >= startDay)) { const empty = create('span', 'empty-row-label', '目前區間未排工作'); empty.style.top = `${row.top + row.height / 2 - 8}px`; canvas.append(empty); }
+    if (!items.some((item) => item.indexes.includes(rows.indexOf(row)) && item.range.start <= endDay && item.range.end >= startDay)) { const empty = create('span', 'empty-row-label', t('emptyRange')); empty.style.top = `${row.top + row.height / 2 - 8}px`; canvas.append(empty); }
   }
   const axis = create('div', 'time-axis');
   let lastMonthLabelX = -Infinity;
@@ -547,7 +695,7 @@ function renderTimeline(preserveScroll = false) {
     if (weekday === 0 || weekday === 6) { const shade = create('div', 'weekend-shade'); shade.style.left = `${x}px`; shade.style.width = `${pixelsPerDay}px`; canvas.append(shade); }
     if (monthStart || index === 0 || state.zoom === 'week' || weekday === 1) { const line = create('div', `grid-line${monthStart ? ' major-line' : ''}`); line.style.left = `${x}px`; canvas.append(line); }
     if ((monthStart || index === 0) && x - lastMonthLabelX >= 90) { const month = create('span', 'month-label', `${date.getUTCFullYear()} / ${String(date.getUTCMonth() + 1).padStart(2, '0')}`); month.style.left = `${x}px`; axis.append(month); lastMonthLabelX = x; }
-    if ((state.zoom === 'week' || weekday === 1 || index === 0) && x - lastDayLabelX >= (state.zoom === 'week' ? 32 : 39)) { const text = state.zoom === 'week' ? `${date.getUTCDate()} ${['日', '一', '二', '三', '四', '五', '六'][weekday]}` : `${date.getUTCMonth() + 1}/${date.getUTCDate()}`; const tick = create('span', `day-label${weekday === 0 || weekday === 6 ? ' weekend-label' : ''}`, text); tick.style.left = `${x}px`; axis.append(tick); lastDayLabelX = x; }
+    if ((state.zoom === 'week' || weekday === 1 || index === 0) && x - lastDayLabelX >= (state.zoom === 'week' ? 32 : 39)) { const text = state.zoom === 'week' ? `${date.getUTCDate()} ${weekdayText(weekday)}` : `${date.getUTCMonth() + 1}/${date.getUTCDate()}`; const tick = create('span', `day-label${weekday === 0 || weekday === 6 ? ' weekend-label' : ''}`, text); tick.style.left = `${x}px`; axis.append(tick); lastDayLabelX = x; }
   }
   canvas.append(axis);
   const visibleCases = new Set();
@@ -562,12 +710,12 @@ function renderTimeline(preserveScroll = false) {
     const cardWidth = (Math.min(item.range.end, endDay) - Math.max(item.range.start, startDay) + 1) * pixelsPerDay - 8;
     const card = makeCard(item.project, item.indexes.length > 1, cardWidth, item.phase, item.attached, item.indexes.map((index) => spaces[index].id), item.splitCross);
     Object.assign(card.style, { left: `${x * pixelsPerDay + 4}px`, top: `${item.attached ? cardTop + cardHeight - 45 : cardTop}px`, width: `${Math.max(17, cardWidth)}px`, height: `${item.attached ? 41 : cardHeight}px` });
-    if (item.range.start < startDay) { const heading = card.querySelector('.card-heading'); heading.textContent = `← ${heading.textContent}`; card.title = `開始日期：${fromDay(item.range.start)}`; }
+    if (item.range.start < startDay) { const heading = card.querySelector('.card-heading'); heading.textContent = `← ${heading.textContent}`; card.title = t('startDate', { date: fromDay(item.range.start) }); }
     canvas.append(card);
   }
   const todayDay = dayNumber(today);
-  if (todayDay >= startDay && todayDay <= endDay) { const line = create('div', 'today-line'); line.style.left = `${(todayDay - startDay) * pixelsPerDay + 1}px`; line.append(create('span', 'today-label', `今天 ${shortDate(today)}`)); canvas.append(line); }
-  $('visible-count').textContent = `${visibleCases.size} 案在目前區間${rows.some((row) => row.overlaps) ? ' · 有工作區超過一般負荷，請確認安排' : ''}`;
+  if (todayDay >= startDay && todayDay <= endDay) { const line = create('div', 'today-line'); line.style.left = `${(todayDay - startDay) * pixelsPerDay + 1}px`; line.append(create('span', 'today-label', t('todayDate', { date: shortDate(today) }))); canvas.append(line); }
+  $('visible-count').textContent = t('visibleCount', { count: visibleCases.size }) + (rows.some((row) => row.overlaps) ? t('visibleOverload') : '');
   state.renderedDayWidth = pixelsPerDay;
   $('timeline-viewport').scrollLeft = previousOffsetDays * pixelsPerDay;
   updateDateRange();
@@ -591,70 +739,85 @@ const CARD_GAP = 15;
 const ROW_PADDING = 15;
 const $ = (id) => document.getElementById(id);
 let today = taipeiToday();
-const state = { payload: null, zoom: 'month', pastExpanded: false, start: today, search: '', activeProject: null, loading: false };
+const state = { payload: null, zoom: 'month', pastExpanded: false, start: today, search: '', activeProject: null, loading: false, stale: false, noticeKey: null, noticeError: false };
 const callGoogle = createGoogleBridge(APP_VIEW);
 const normalizePayload = normalizePublicPayload;
 function dayWidth() { return state.zoom === 'month' ? Math.max(4, $('timeline-viewport').clientWidth / 205) : 36; }
 function dayNumber(value) { return parseDay(value); }
 function fromDay(value) { return formatDay(value); }
 function addDays(value, days) { return fromDay(dayNumber(value) + days); }
-function shortDate(value) { return value?.slice(5).replace('-', '/') ?? '未定'; }
-function dateText(value) { return value || '未定'; }
+function shortDate(value) { return value?.slice(5).replace('-', '/') ?? t('unspecified'); }
+function dateText(value) { return value || t('unspecified'); }
 function syncTimeLabel(value) {
   if (!value) return '';
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return String(value);
   try {
     const parts = new Intl.DateTimeFormat('zh-TW', {
-      timeZone: 'Asia/Taipei', month: '2-digit', day: '2-digit',
+      timeZone: 'Asia/Taipei', ...(APP_TRANSPORT === 'static' ? { year: 'numeric' } : {}), month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
     }).formatToParts(date);
     const part = (name) => parts.find((item) => item.type === name)?.value || '';
-    return `${part('month')}/${part('day')} ${part('hour')}:${part('minute')}`;
+    return APP_TRANSPORT === 'static' ? `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}（${t('taipeiTime')}）` : `${part('month')}/${part('day')} ${part('hour')}:${part('minute')}`;
   } catch { return String(value); }
 }
 function create(tag, className, text) { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; }
 function workspaces() { return state.payload?.workspaces || []; }
 function overlaps(a, b) { return a.start <= b.end && b.start <= a.end; }
 function workspaceUnits(project, space) { const value = project.workspaceUnits?.[space?.id]; return Number.isInteger(value) && value > 0 ? value : 1; }
-function notify(message, error = false) { $('notification').textContent = message; $('notification').classList.toggle('error', error); $('notification').hidden = !message; }
-function detailRow(label, value) { $('detail-content').append(create('div', 'detail-label', label), create('div', 'detail-value', value || '未填')); }
+function notify(message, error = false) { state.noticeKey = null; $('notification').textContent = message; $('notification').classList.toggle('error', error); $('notification').hidden = !message; }
+function notifyLocalized(key, error = false) { notify(t(key), error); state.noticeKey = key; state.noticeError = error; }
+function detailRow(label, value) { $('detail-content').append(create('div', 'detail-label', label), create('div', 'detail-value', value || t('missing'))); }
 
 function updateThemeControl() {
   const dark = document.documentElement.dataset.theme !== 'light';
-  $('theme-toggle').textContent = dark ? '切換亮色' : '切換暗色';
-  $('theme-toggle').setAttribute('aria-label', dark ? '切換亮色' : '切換暗色');
+  $('theme-toggle').textContent = t(dark ? 'lightMode' : 'darkMode');
+  $('theme-toggle').setAttribute('aria-label', t(dark ? 'lightMode' : 'darkMode'));
   $('theme-toggle').setAttribute('aria-pressed', String(dark));
+}
+
+function renderSyncStatus() {
+  if (state.loading) { $('sync-status').textContent = t('loading'); return; }
+  if (!state.payload) { $('sync-status').textContent = t(state.stale && APP_VIEW === 'public' ? 'notLoadedPublic' : state.stale ? 'notLoaded' : 'loading'); return; }
+  $('sync-status').textContent = APP_TRANSPORT === 'static'
+    ? `${t(state.stale ? 'previousPublished' : 'lastPublished')} · ${syncTimeLabel(state.payload.syncedAt)}`
+    : state.stale ? t('notLoaded') : state.payload.syncedAt ? `${t('updated')} · ${syncTimeLabel(state.payload.syncedAt)}` : t('loaded');
 }
 
 async function load() {
   if (state.loading) return;
   state.loading = true;
   $('refresh').disabled = true;
-  $('sync-status').textContent = '正在讀取排程';
+  renderSyncStatus();
   try {
     const payload = normalizePayload(await callGoogle('getTimeline'));
     const followToday = state.start === today;
     if (dayNumber(payload.today) !== null) { today = payload.today; if (followToday) state.start = today; }
     state.payload = payload;
-    notify(payload.warnings?.length ? payload.warnings.join('；') : '');
+    state.stale = false;
+    state.loading = false;
+    if (APP_TRANSPORT === 'static' && !payload.projects.length) notifyLocalized('noPublicProjects');
+    else notify(payload.warnings?.length ? payload.warnings.join('；') : '');
     render();
   } catch (error) {
-    notify(APP_VIEW === 'public' ? '無法讀取公開排程，請稍後再試。' : error.message, true);
-    $('sync-status').textContent = '尚未讀取';
+    state.stale = true;
+    state.loading = false;
+    if (APP_VIEW === 'public') notifyLocalized(state.payload ? 'publicReloadError' : 'publicLoadError', true);
+    else notify(error.message, true);
+    renderSyncStatus();
   } finally { state.loading = false; $('refresh').disabled = false; }
 }
 
-function render() {
+function render(preserveScroll = false) {
   if (!state.payload) return;
-  $('view-label').textContent = state.payload.preview ? '本機示意預覽' : APP_VIEW === 'public' ? '公開排程' : '團隊排程';
-  $('mode-description').textContent = state.payload.preview ? '此畫面使用虛構案件，不代表實際檔期。' : APP_VIEW === 'public' ? '選擇合適的時間後，聯繫團隊確認製作需求與預約。' : '每個方塊代表一段工作；點選案件查看資訊與安排工作區。';
-  $('sync-status').textContent = state.payload.syncedAt ? `已更新 · ${syncTimeLabel(state.payload.syncedAt)}` : '已讀取排程';
+  $('view-label').textContent = t(state.payload.preview ? 'previewView' : APP_VIEW === 'public' ? 'publicView' : 'teamView');
+  $('mode-description').textContent = t(state.payload.preview ? 'previewDescription' : APP_VIEW === 'public' ? 'publicDescription' : 'teamDescription');
+  renderSyncStatus();
   $('month-view').setAttribute('aria-pressed', String(state.zoom === 'month'));
   $('week-view').setAttribute('aria-pressed', String(state.zoom === 'week'));
   $('past-toggle').setAttribute('aria-pressed', String(state.pastExpanded));
-  $('past-toggle').textContent = state.pastExpanded ? '收合過去日期' : '展開過去日期';
-  renderTimeline();
+  $('past-toggle').textContent = t(state.pastExpanded ? 'collapsePast' : 'expandPast');
+  renderTimeline(preserveScroll);
   renderPending();
 }
 
@@ -665,12 +828,12 @@ function renderPending() {
   for (const item of [...plan.pending, ...plan.unassigned]) { if (!reasons.has(item.projectId)) reasons.set(item.projectId, new Set()); reasons.get(item.projectId).add(item.reason); }
   const pending = projects.filter((project) => reasons.has(project.id)).sort((a, b) => (dayNumber(a.start) ?? Infinity) - (dayNumber(b.start) ?? Infinity) || a.id.localeCompare(b.id));
   $('pending-section').hidden = !pending.length;
-  $('pending-count').textContent = `${pending.length} 案`;
+  $('pending-count').textContent = t('projectCount', { count: pending.length });
   const wrapper = $('pending-projects'); wrapper.replaceChildren();
   for (const project of pending) {
     const card = create('button', 'pending-card'); card.type = 'button';
-    card.append(create('span', 'pending-heading', APP_VIEW === 'public' ? project.alias : `${project.id} · ${project.name || '未命名專案'}`), create('span', 'pending-goal', project.goal || '製作排程'));
-    card.append(create('span', 'pending-meta', `${dateText(project.start)} → ${dateText(project.end)} · ${[...reasons.get(project.id)].join('；')}`));
+    card.append(create('span', 'pending-heading', APP_VIEW === 'public' ? project.alias : `${project.id} · ${project.name || t('unnamed')}`), create('span', 'pending-goal', project.goal || t('productionSchedule')));
+    card.append(create('span', 'pending-meta', `${dateText(project.start)} → ${dateText(project.end)} · ${[...reasons.get(project.id)].map(pendingReasonText).join('；')}`));
     card.addEventListener('click', () => openProject(project)); wrapper.append(card);
   }
 }
@@ -682,6 +845,7 @@ $('theme-toggle').addEventListener('click', () => {
   updateThemeControl();
 });
 updateThemeControl();
+initializeLanguage();
 $('refresh').addEventListener('click', load);
 $('month-view').addEventListener('click', () => { state.zoom = 'month'; render(); });
 $('week-view').addEventListener('click', () => { state.zoom = 'week'; render(); });
@@ -699,7 +863,15 @@ $('close-dialog').addEventListener('click', () => $('project-dialog').close());
 $('project-dialog').addEventListener('click', (event) => { if (event.target !== $('project-dialog')) return; const rect = $('project-dialog').getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) $('project-dialog').close(); });
 
 await load();
-setInterval(() => { const current = taipeiToday(); if (current === today || state.payload?.preview) return; load(); }, 60000);
+setInterval(() => {
+  const current = taipeiToday();
+  if (current === today || state.payload?.preview) return;
+  if (APP_TRANSPORT !== 'static') { load(); return; }
+  const followToday = state.start === today;
+  today = current;
+  if (followToday) state.start = today;
+  if (state.payload) { state.payload.today = current; render(); }
+}, 60000);
 
 function matchProject(project) {
   const query = state.search.toLocaleLowerCase();
@@ -712,12 +884,12 @@ function makeCard(project, cross, width, phase = 'production', attached = false,
   const start = phase === 'correction' ? project.correctionStart : project.start;
   const end = phase === 'correction' ? project.correctionEnd : project.end;
   const renderIds = segmentIds.length ? segmentIds : project.workspaceIds;
-  card.setAttribute('aria-label', `${project.alias}，${phase === 'correction' ? '追加修正' : project.goal || '製作排程'}，${dateText(start)} 至 ${dateText(end)}，工作區 ${renderIds.join('、')}`);
-  card.append(create('span', 'card-heading', phase === 'correction' ? `${project.alias} · 追加修正` : project.alias));
+  card.setAttribute('aria-label', t('cardLabel', { alias: project.alias, goal: phase === 'correction' ? t('correction') : project.goal || t('productionSchedule'), start: dateText(start), end: dateText(end), areas: renderIds.join(', ') }));
+  card.append(create('span', 'card-heading', phase === 'correction' ? `${project.alias} · ${t('correction')}` : project.alias));
   if (!attached) {
-    card.append(create('span', 'card-goal', project.goal || '製作排程'));
-    const areaText = renderIds.map((id) => { const space = workspaces().find((item) => item.id === id); return `${id}（${workspaceUnits(project, space || { id })} ${space?.unit || '項目'}）`; }).join(' ＋ ');
-    card.append(create('span', 'cross-label', splitCross ? `同案跨區 ${project.workspaceIds.join(' ＋ ')} · 本段 ${areaText}` : `工作區 ${areaText}`));
+    card.append(create('span', 'card-goal', project.goal || t('productionSchedule')));
+    const areaText = renderIds.map((id) => { const space = workspaces().find((item) => item.id === id); const count = workspaceUnits(project, space || { id }); return `${id}（${count} ${unitText(space, count)}）`; }).join(' ＋ ');
+    card.append(create('span', 'cross-label', splitCross ? t('crossWorkspace', { all: project.workspaceIds.join(' ＋ '), areas: areaText }) : t('workspaceAllocation', { areas: areaText })));
     const bottom = create('span', 'card-bottom');
     bottom.append(create('span', 'card-dates', `${dateText(start)} → ${dateText(end)}`));
     card.append(bottom);
@@ -727,14 +899,15 @@ function makeCard(project, cross, width, phase = 'production', attached = false,
 }
 
 function openProject(project) {
-  $('detail-id').textContent = '製作排程';
+  state.activeProject = project;
+  $('detail-id').textContent = t('productionSchedule');
   $('detail-title').textContent = project.alias;
   $('detail-content').replaceChildren();
-  detailRow('交付目標', project.goal || '製作排程');
-  detailRow('排程日期', `${dateText(project.start)} → ${dateText(project.end)}`);
-  if (project.correctionStart || project.correctionEnd) detailRow('追加修正', `${dateText(project.correctionStart)} → ${dateText(project.correctionEnd)}`);
-  detailRow('工作區', project.workspaceIds.map((id) => { const space = workspaces().find((item) => item.id === id); return `${id}（${workspaceUnits(project, space || { id })} ${space?.unit || '項目'}）`; }).join(' ＋ ') || '待安排');
-  $('project-dialog').showModal();
+  detailRow(t('deliveryGoal'), project.goal || t('productionSchedule'));
+  detailRow(t('scheduleDates'), `${dateText(project.start)} → ${dateText(project.end)}`);
+  if (project.correctionStart || project.correctionEnd) detailRow(t('correction'), `${dateText(project.correctionStart)} → ${dateText(project.correctionEnd)}`);
+  detailRow(t('workspace'), project.workspaceIds.map((id) => { const space = workspaces().find((item) => item.id === id); const count = workspaceUnits(project, space || { id }); return `${id}（${count} ${unitText(space, count)}）`; }).join(' ＋ ') || t('pending'));
+  if (!$('project-dialog').open) $('project-dialog').showModal();
 }
 
 })();</script>
