@@ -2,6 +2,8 @@
 
 PM Studio displays our production schedule for 3D characters, environments, and game art. Browse dates, return to today, or switch between Chinese and English. Production and correction periods are distinct; projects awaiting dates or assignments remain visible.
 
+The timeline fits six weeks on narrow screens and twelve weeks on wider screens. Weekly labels keep dates readable, and resizing preserves the date being viewed. Short project bars keep their actual duration; select or focus one to read its full details.
+
 The architecture has three parts:
 
 1. **Google Project List:** the only source of project information, dates, status, and workspace allocations. Internal staff edit this sheet directly using their existing Google permissions.

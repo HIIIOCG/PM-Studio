@@ -44,14 +44,22 @@ h1 { margin: 0; font-size: 29px; letter-spacing: .025em; font-weight: 650; }
 .grid-day.weekend { background: #1c252d; }
 .grid-day.week-start { border-left-color: #415362; }
 .month-label { position: absolute; top: 0; height: 38px; padding: 11px 12px; border-left: 1px solid #4b5c69; border-bottom: 1px solid var(--border); color: #bbcbd7; font-size: 12px; white-space: nowrap; overflow: hidden; background: #222b33; }
-.day-label { position: absolute; top: 38px; height: 30px; padding-top: 8px; text-align: center; color: #8197a8; font-size: 10px; }
+.day-label { position: absolute; top: 38px; height: 30px; padding: 8px 0 0 3px; text-align: left; color: #8197a8; font-size: 10px; overflow: hidden; }
 .row-rule { position: absolute; left: 0; right: 0; border-bottom: 1px solid var(--border); pointer-events: none; }
 .today-line { position: absolute; top: 38px; bottom: 0; border-left: 2px solid #2eaafa; pointer-events: none; z-index: 2; }
 .today-label { position: absolute; top: 6px; left: 5px; font-size: 9px; color: #67bdf7; background: #1e3546; padding: 3px 5px; border-radius: 4px; white-space: nowrap; }
-.project-card { position: absolute; height: 78px; border: 1px solid #8ea6b7; border-radius: 9px; background: #2b3945; color: #e4edf4; padding: 11px 12px; overflow: hidden; box-shadow: 0 3px 9px #0002; }
+.project-card { position: absolute; height: 78px; min-width: 0; border: 1px solid #8ea6b7; border-radius: 9px; background: #2b3945; color: #e4edf4; padding: 0; overflow: hidden; text-align: left; box-shadow: 0 3px 9px #0002; }
+.card-content { position: absolute; top: 11px; left: 12px; right: 12px; pointer-events: none; }
 .project-card.correction { background: repeating-linear-gradient(135deg,#423329,#423329 8px,#3a302a 8px,#3a302a 16px); border-color: #c59366; }
-.project-card:focus, .project-card:hover { z-index: 5; min-width: 210px; height: auto; min-height: 78px; background: #344958; overflow: visible; }
-.project-card.correction:focus, .project-card.correction:hover { background: #594334; }
+.project-card:focus-visible, .project-card:hover { z-index: 5; background: #344958; }
+.project-card.correction:focus-visible, .project-card.correction:hover { background: #594334; }
+.project-details { width: min(400px, calc(100vw - 32px)); padding: 25px; border: 1px solid #60788a; border-radius: 14px; color: #e4edf4; background: #263540; box-shadow: 0 16px 50px #0008; }
+.project-details::backdrop { background: #09121bbb; }
+.project-details h2 { font-size: 20px; color: #e4edf4; padding-right: 30px; }
+.details-close { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; font-size: 21px; line-height: 1; }
+.details-customer { color: #a6bfce; font-size: 13px; margin: 8px 0 20px; }
+.details-dates { font-size: 13px; line-height: 1.8; font-variant-numeric: tabular-nums; }
+.details-workspaces { color: #a6bfce; font-size: 12px; line-height: 1.8; margin-bottom: 0; }
 .card-heading { display: flex; gap: 9px; align-items: center; white-space: nowrap; line-height: 1.4; }
 .card-id { font-weight: 650; font-size: 13px; }
 .customer-code { font-size: 10px; color: #a6bfce; font-weight: 400; }

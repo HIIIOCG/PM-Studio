@@ -6,7 +6,7 @@ import { resolve, sep } from 'node:path';
 import { Script } from 'node:vm';
 import { normalizeTimelinePayload, PENDING_REASONS } from '../ui/common-contract.mjs';
 import { createGoogleBridge } from '../ui/bridge.mjs';
-import { timelineDay, preciseTimelineRange, projectPendingReasons, buildTimelineLayout } from '../../web/dist/app.mjs';
+import { timelineDay, timelineScale, timelineScrollPosition, preciseTimelineRange, projectPendingReasons, buildTimelineLayout } from '../../web/dist/app.mjs';
 import { buildGoogleUi } from '../../scripts/build-google-ui.mjs';
 import { createGooglePreviewServer, createPreviewPayload } from '../../scripts/serve-google-preview.mjs';
 
@@ -53,7 +53,7 @@ test('month precision, impossible and reversed dates remain pending; valid corre
   const source = payload();
   const project = { ...source.projects[0], start: '2026-12', end: '', correctionStart: '2027-01-03', correctionEnd: '2027-01-08' };
   assert.ok(projectPendingReasons(project).includes('production-dates'));
-  const layout = buildTimelineLayout([project], source.workspaces, timelineDay('2026-12-20'));
+  const layout = buildTimelineLayout([project], source.workspaces, timelineDay('2026-12-20'), timelineScale(900));
   assert.equal(layout.rows[0].blocks.length, 1);
   assert.equal(layout.rows[0].blocks[0].phase, 'correction');
   const unspecified = source.projects.find((project) => !project.workspaceIds.length);
@@ -64,14 +64,43 @@ test('timeline retains overlap lanes, cross-workspace cases and year-spanning ph
   const source = payload();
   const base = { ...source.projects[0], start: '2026-12-25', end: '2027-01-05', correctionStart: '2027-01-12', correctionEnd: '2027-01-14', workspaceIds: ['A','C'], workspaceUnits: { A: 3, C: 1 }, pendingReasons: [] };
   const overlapping = { ...base, id: 'C-999', start: '2026-12-29', end: '2027-01-01', correctionStart: '', correctionEnd: '', workspaceIds: ['A'], workspaceUnits: { A: 1 } };
-  const layout = buildTimelineLayout([base,overlapping], source.workspaces, timelineDay('2026-12-20'), 40);
+  const layout = buildTimelineLayout([base,overlapping], source.workspaces, timelineDay('2026-12-20'), { dayWidth: 20, days: 40 });
   assert.equal(layout.rows[0].blocks.length, 3);
   assert.equal(layout.rows[2].blocks.length, 2);
   assert.notEqual(layout.rows[0].blocks.find((block) => block.project.id === 'C-999').lane, layout.rows[0].blocks.find((block) => block.phase === 'production' && block.project.id === base.id).lane);
   assert.equal(layout.rows[0].blocks.find((block) => block.phase === 'production' && block.project.id === base.id).width, 12*20-4);
-  const earlier = buildTimelineLayout([base], source.workspaces, timelineDay('2020-01-01'));
+  const earlier = buildTimelineLayout([base], source.workspaces, timelineDay('2020-01-01'), timelineScale(900));
   assert.equal(earlier.rows.flatMap((row) => row.blocks).length, 0);
   assert.equal(projectPendingReasons(base).length, 0);
+});
+test('adaptive scale fits exactly six or twelve weeks without losing fractional scroll dates', () => {
+  for (const width of [212, 240, 559, 560, 561, 900, 1428]) {
+    const scale = timelineScale(width);
+    assert.equal(scale.visibleDays, width <= 560 ? 42 : 84);
+    assert.ok(Math.abs(scale.dayWidth * scale.visibleDays - width) < 1e-9);
+    const first = timelineDay('2026-12-17');
+    const position = timelineScrollPosition(first, 167.25 * scale.dayWidth, scale.dayWidth);
+    assert.equal(position.day, first + 167);
+    assert.ok(Math.abs(position.fraction - .25) < 1e-9);
+    assert.equal(timelineScrollPosition(first, 42 * scale.dayWidth, scale.dayWidth).day, first + 42);
+  }
+});
+test('one-day bars keep true widths at both scales and same-day overlaps use separate lanes', () => {
+  const source = payload();
+  const base = { ...source.projects[0], start: '2026-12-25', end: '2026-12-25', correctionStart: '', correctionEnd: '', workspaceIds: ['A'], workspaceUnits: { A: 1 }, pendingReasons: [] };
+  const overlap = { ...base, id: 'C-998' };
+  const nextDay = { ...base, id: 'C-999', start: '2026-12-26', end: '2026-12-26' };
+  for (const width of [212, 900]) {
+    const scale = timelineScale(width);
+    const layout = buildTimelineLayout([base, overlap, nextDay], source.workspaces, timelineDay('2026-12-20'), scale);
+    const blocks = layout.rows[0].blocks;
+    assert.ok(blocks.every((block) => block.width > 0 && block.width <= scale.dayWidth));
+    assert.notEqual(blocks[0].lane, blocks[1].lane);
+    assert.equal(blocks[0].lane, blocks[2].lane);
+    assert.ok(Math.abs(blocks[2].left - blocks[0].left - scale.dayWidth) < 1e-9);
+    assert.ok(blocks[0].left + blocks[0].width < blocks[2].left);
+    assert.ok(Math.abs(layout.width - 210 * scale.dayWidth) < 1e-9);
+  }
 });
 test('bridge only performs an argument-free getTimeline read and sanitizes service errors', async () => {
   const calls = [];

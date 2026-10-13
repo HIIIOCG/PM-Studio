@@ -32,6 +32,8 @@ Pending reasons are fixed codes: `no-workspace`, `workspace-values`, `production
 
 Incomplete dates and assignments keep valid projects in the response. The interface shows a continuous timeline with earlier/later dates, today, Chinese/English, correction periods, and a pending list. It has no search, details editor, or workspace save. A/B usual load of 2 is a reminder, not a capacity limit.
 
+The visible timeline spans 42 days on narrow viewports and 84 days on wider ones. Weekly ticks share the same date scale as project bars, and resizing preserves the leftmost date. Compact project bars retain their real duration and expose complete labels when selected or focused.
+
 ## Build and configure
 
 ```sh
