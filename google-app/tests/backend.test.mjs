@@ -8,7 +8,7 @@ const SOURCE_ID = 'FICTIONAL_SOURCE_1234';
 const PUBLIC_ERROR = '排程目前無法讀取，請稍後重試。';
 const header = ['案號', '目前交付目標', '專案／範圍', '客戶', '負責人', '狀態', '原始開始', '原始結束',
   '延長修正／補充', '交付步驟（參考）', '資料', '窗口', '執行者', '目前排程開始', '目前排程結束',
-  '修正開始', '修正結束', '客戶編號', '工作區 A 占用', '工作區 B 占用', '工作區 C 占用', '工作區 D 占用'];
+  '修正開始', '修正結束', '客戶編號', '工作區 A 占用', '工作區 B 占用', '工作區 C 占用', '工作區 D 占用', '排程性質', '未結事項'];
 const defaults = {
   '案號': 'C-001', '目前交付目標': 'SecretGoal', '專案／範圍': 'SecretProject', '客戶': 'SecretCustomer',
   '負責人': 'SecretOwner', '執行者': 'SecretExecutor', '窗口': 'SecretContact',
@@ -66,12 +66,13 @@ test('single read uses formatted source values and returns only the exact public
   const env = setup();
   const payload = plain(env.rpc('getTimeline'));
   assert.deepEqual(Object.keys(payload).sort(), ['schemaVersion', 'today', 'syncedAt', 'projects', 'workspaces', 'warnings'].sort());
-  assert.equal(payload.schemaVersion, 2);
+  assert.equal(payload.schemaVersion, 3);
   assert.equal(payload.today, '2026-10-13');
   assert.equal(payload.syncedAt, '2026-10-12T16:30:00.000Z');
   assert.deepEqual(env.state.reads, [{ id: SOURCE_ID, range: "'專案列表'", settings: { majorDimension: 'ROWS', valueRenderOption: 'FORMATTED_VALUE' } }]);
   assert.deepEqual(payload.projects[0], {
     id: 'C-001', customerCode: 'V-01', start: '2026-12-01', end: '2027-01-31', correctionStart: '', correctionEnd: '',
+    scheduleKind: 'production', followUp: [],
     workspaceIds: ['A'], workspaceUnits: { A: 1 }, pendingReasons: []
   });
   assert.doesNotMatch(JSON.stringify(payload), /Secret|private\.example|FICTIONAL_SOURCE|sourceUrl|externalAlias|approved|originalStart/);
@@ -102,7 +103,7 @@ test('private values injected into every source column are never reflected outsi
   assert.equal(payload.projects[0].end, '');
   assert.equal(payload.projects[0].correctionStart, '');
   assert.deepEqual(payload.projects[0].workspaceUnits, {});
-  assert.deepEqual(new Set(payload.projects[0].pendingReasons), new Set(['customer-code', 'production-dates', 'correction-dates', 'workspace-values', 'no-workspace']));
+  assert.deepEqual(new Set(payload.projects[0].pendingReasons), new Set(['customer-code', 'schedule-kind', 'follow-up-values', 'production-dates', 'correction-dates', 'workspace-values', 'no-workspace']));
 });
 
 test('customer codes retain leading zeroes and invalid or missing codes stay pending', () => {
@@ -127,7 +128,7 @@ test('only two empty current dates without rescheduling clues permit original-da
 });
 
 test('source date precision, invalid calendar days and inverted ranges are preserved without invented dates', () => {
-  for (const [start, end] of [['2027-02', '2027-03'], ['2026-02-29', '2026-03-01'], ['2027-13-01', '2027-14-01'], ['2027-02-02', '2027-01-01']]) {
+  for (const [start, end] of [['2026-02-29', '2026-03-01'], ['2027-13-01', '2027-14-01'], ['2027-02-02', '2027-01-01'], ['2027-13', '2028-01'], ['2027-02', '2027-01'], ['2027-02-29', '2027-03']]) {
     const item = project({ '目前排程開始': start, '目前排程結束': end });
     assert.equal(item.start, start); assert.equal(item.end, end); hasReason(item, 'production-dates');
   }
@@ -135,6 +136,66 @@ test('source date precision, invalid calendar days and inverted ranges are prese
   assert.equal(locale.start, ''); assert.equal(locale.end, ''); hasReason(locale, 'production-dates');
   const leap = project({ '目前排程開始': '2028-02-29', '目前排程結束': '2028-03-01' });
   assert.ok(!leap.pendingReasons.includes('production-dates'));
+});
+
+test('month-known production and correction dates are valid calendar envelopes without changing source precision', () => {
+  for (const [start, end] of [['2026-09', '2026-11-30'], ['2027-04', '2027-06'], ['2027-12', '2028-01'], ['2028-02-29', '2028-02'], ['2027-02', '2027-02-01']]) {
+    const item = project({ '目前排程開始': start, '目前排程結束': end, '修正開始': start, '修正結束': end });
+    assert.equal(item.start, start); assert.equal(item.end, end);
+    assert.equal(item.correctionStart, start); assert.equal(item.correctionEnd, end);
+    assert.ok(!item.pendingReasons.includes('production-dates'));
+    assert.ok(!item.pendingReasons.includes('correction-dates'));
+  }
+  for (const [start, end] of [['2028-03-01', '2028-02'], ['2027-02', '2027-01-31'], ['2027-00', '2027-03']]) {
+    hasReason(project({ '目前排程開始': start, '目前排程結束': end }), 'production-dates');
+  }
+});
+
+test('reservation kind maps only its authorized source label and works during optional-column migration', () => {
+  const reserved = project({ '目前排程開始': '2027-04', '目前排程結束': '2027-06', '排程性質': '時段預約' });
+  assert.equal(reserved.scheduleKind, 'reservation');
+  assert.deepEqual(reserved.pendingReasons, []);
+  for (const value of ['', '製作排程']) assert.equal(project({ '排程性質': value }).scheduleKind, 'production');
+  for (const value of ['SecretCustomer 時段預約', 'reservation', '製作排程、時段預約', '<script>']) {
+    const item = project({ '排程性質': value });
+    assert.equal(item.scheduleKind, 'production'); hasReason(item, 'schedule-kind');
+    assert.ok(!JSON.stringify(item).includes(value));
+  }
+  const oldHeader = header.filter(label => !['排程性質', '未結事項'].includes(label));
+  const migrated = plain(setup({ header: oldHeader, rows: [row({}, oldHeader)] }).rpc('getTimeline').projects[0]);
+  assert.equal(migrated.scheduleKind, 'production'); assert.deepEqual(migrated.followUp, []);
+  assert.deepEqual(migrated.pendingReasons, []);
+});
+
+test('follow-up exposes only exact allowed tokens, never raw source status or note content', () => {
+  assert.deepEqual(project({ '未結事項': '客戶確認中' }).followUp, ['customer-confirmation']);
+  assert.deepEqual(project({ '未結事項': '待收款中' }).followUp, ['payment']);
+  for (const separator of ['、', ',', '，', '\n', '\r\n']) {
+    assert.deepEqual(project({ '未結事項': '待收款中' + separator + ' 客戶確認中' + separator + '待收款中' }).followUp, ['customer-confirmation', 'payment']);
+  }
+  for (const value of ['', '已處理']) assert.deepEqual(project({ '未結事項': value }).followUp, []);
+  for (const value of ['待收款', 'SecretCustomer 客戶確認中', '客戶確認中／待收款中', '已處理、待收款中', '客戶確認中、SecretAccount', ',，']) {
+    const item = project({ '未結事項': value });
+    assert.deepEqual(item.followUp, []); hasReason(item, 'follow-up-values');
+    assert.ok(!JSON.stringify(item).includes(value));
+  }
+  const privateOnly = project({ '狀態': '客戶確認中、待收款中', '延長修正／補充': '待收款中 SecretBankAccount' });
+  assert.deepEqual(privateOnly.followUp, []);
+  assert.doesNotMatch(JSON.stringify(privateOnly), /SecretBankAccount|客戶確認中|待收款中/);
+});
+
+test('explicit follow-up state supersedes obsolete correction hints, while partial correction dates remain pending', () => {
+  const note = '原期後持續修正；新終點待定 SecretCustomer';
+  for (const value of ['客戶確認中', '待收款中', '已處理']) {
+    const item = project({ '未結事項': value, '延長修正／補充': note });
+    assert.ok(!item.pendingReasons.includes('correction-dates'));
+    assert.equal(item.correctionStart, ''); assert.equal(item.correctionEnd, '');
+    const partial = project({ '未結事項': value, '延長修正／補充': note, '修正開始': '2027-02' });
+    hasReason(partial, 'correction-dates');
+  }
+  for (const value of ['', 'SecretCustomer']) {
+    hasReason(project({ '未結事項': value, '延長修正／補充': note }), 'correction-dates');
+  }
 });
 
 test('correction periods and pending notes stay distinct from an existing production schedule', () => {

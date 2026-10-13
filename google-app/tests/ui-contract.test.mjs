@@ -6,7 +6,7 @@ import { resolve, sep } from 'node:path';
 import { Script } from 'node:vm';
 import { normalizeTimelinePayload, PENDING_REASONS } from '../ui/common-contract.mjs';
 import { createGoogleBridge } from '../ui/bridge.mjs';
-import { timelineDay, timelineScale, timelineScrollPosition, preciseTimelineRange, projectPendingReasons, buildTimelineLayout } from '../../web/dist/app.mjs';
+import { timelineDay, timelineDateBounds, timelineRange, taipeiToday, timelineScale, timelineScrollPosition, preciseTimelineRange, projectPendingReasons, projectFollowUp, buildTimelineLayout } from '../../web/dist/app.mjs';
 import { buildGoogleUi } from '../../scripts/build-google-ui.mjs';
 import { createGooglePreviewServer, createPreviewPayload } from '../../scripts/serve-google-preview.mjs';
 
@@ -15,13 +15,13 @@ test('single public contract preserves IDs, codes, four workspaces, and flexible
   const source = payload();
   source.projects[0].workspaceUnits.A = 9;
   const result = normalizeTimelinePayload(source);
-  assert.equal(result.schemaVersion, 2);
-  assert.equal(result.projects.length, 9);
+  assert.equal(result.schemaVersion, 3);
+  assert.equal(result.projects.length, 12);
   assert.equal(result.projects[0].id, 'C-901');
   assert.equal(result.projects[0].customerCode, 'TEST-01');
   assert.equal(result.projects[0].workspaceUnits.A, 9);
   assert.deepEqual(result.workspaces.map((space) => space.id), ['A','B','C','D']);
-  assert.deepEqual(PENDING_REASONS, ['no-workspace','workspace-values','production-dates','correction-dates','customer-code']);
+  assert.deepEqual(PENDING_REASONS, ['no-workspace','workspace-values','production-dates','correction-dates','customer-code','schedule-kind','follow-up-values']);
 });
 test('client contract rejects extra private fields, leaked names, unknown reasons, and malformed allocations', () => {
   for (const field of ['name','customer','owner','goal','sourceLinks','status','alias']) {
@@ -45,7 +45,7 @@ test('client contract rejects extra private fields, leaked names, unknown reason
   const duplicate = payload(); duplicate.projects.push(duplicate.projects[0]);
   assert.throws(() => normalizeTimelinePayload(duplicate));
 });
-test('month precision, impossible and reversed dates remain pending; valid corrections stay visible', () => {
+test('missing, impossible and reversed dates remain pending; valid corrections stay visible', () => {
   assert.equal(timelineDay('2028-02-29') !== null, true);
   assert.equal(timelineDay('2027-02-29'), null);
   assert.equal(timelineDay('2026-12'), null);
@@ -58,7 +58,70 @@ test('month precision, impossible and reversed dates remain pending; valid corre
   assert.equal(layout.rows[0].blocks[0].phase, 'correction');
   const unspecified = source.projects.find((project) => !project.workspaceIds.length);
   assert.ok(projectPendingReasons(unspecified).includes('no-workspace'));
-  assert.ok(projectPendingReasons(source.projects.at(-1)).includes('correction-dates'));
+  assert.ok(projectPendingReasons(source.projects.find((project) => project.id === 'BG-902')).includes('correction-dates'));
+});
+test('known months render their calendar envelope, preserve source precision, and do not become pending', () => {
+  const source = payload();
+  const project = { ...source.projects[0], start: '2026-09', end: '2026-11-30', correctionStart: '2026-12', correctionEnd: '2027-01', pendingReasons: [] };
+  const original = JSON.stringify(project);
+  assert.equal(projectPendingReasons(project).length, 0);
+  assert.deepEqual(timelineDateBounds('2028-02'), { first: timelineDay('2028-02-01'), last: timelineDay('2028-02-29'), precision: 'month' });
+  assert.equal(timelineDateBounds('2027-13'), null);
+  assert.equal(timelineRange('2027-03', '2027-02'), null);
+  const row = buildTimelineLayout([project], source.workspaces, timelineDay('2026-09-01'), { dayWidth: 10, days: 180 }).rows[0];
+  assert.equal(row.blocks.length, 2);
+  assert.equal(row.blocks[0].start, '2026-09');
+  assert.equal(row.blocks[0].startPrecision, 'month');
+  assert.equal(row.blocks[0].width, 91 * 10 - 2.4);
+  assert.equal(row.blocks[1].endPrecision, 'month');
+  assert.equal(JSON.stringify(project), original);
+});
+test('reservations are real timeline phases without additional confirmation or allocation changes', () => {
+  const source = payload();
+  const reservation = { ...source.projects[0], scheduleKind: 'reservation', start: '2027-04', end: '2027-06', correctionStart: '', correctionEnd: '', workspaceIds: ['A', 'B'], workspaceUnits: { A: 1, B: 1 }, pendingReasons: [] };
+  const layout = buildTimelineLayout([reservation], source.workspaces, timelineDay('2027-04-01'), timelineScale(900));
+  assert.equal(layout.rows[0].blocks[0].phase, 'reservation');
+  assert.equal(layout.rows[1].blocks[0].phase, 'reservation');
+  assert.deepEqual(projectPendingReasons(reservation), []);
+});
+test('historic follow-up survives offscreen work without stretching bars, reserves distinct lanes, and clears with status', () => {
+  const source = payload(), today = timelineDay('2026-12-21'), first = today - 4;
+  const historical = { ...source.projects[0], start: '2026-08-01', end: '2026-08-31', correctionStart: '2026-09-01', correctionEnd: '2026-09-03', followUp: ['customer-confirmation', 'payment'] };
+  const other = { ...historical, id: 'C-999' };
+  const current = { ...historical, id: 'C-998', start: '2026-12-18', end: '2026-12-24', correctionStart: '', correctionEnd: '', followUp: [] };
+  const layout = buildTimelineLayout([historical, other, current], source.workspaces, first, { ...timelineScale(212), today });
+  const row = layout.rows[0];
+  assert.equal(row.blocks.length, 1);
+  assert.equal(row.followUps.length, 2);
+  assert.equal(new Set([...row.blocks, ...row.followUps].map((item) => item.lane)).size, 3);
+  assert.ok(row.followUps.every((item) => item.left === 0 && item.clippedStart && item.endpointVisible));
+  assert.equal(row.followUps[0].first, timelineDay('2026-09-04'));
+  assert.equal(row.followUps[0].last, today);
+  assert.equal(row.blocks[0].last, timelineDay('2026-12-24'));
+  assert.equal(projectFollowUp({ ...historical, followUp: [] }, today), null);
+  assert.equal(projectFollowUp({ ...historical, correctionEnd: '' }, today), null);
+  assert.equal(projectFollowUp({ ...historical, correctionEnd: '2027-02-01' }, today), null);
+  const beforeToday = buildTimelineLayout([historical], source.workspaces, today - 40, { dayWidth: 10, days: 20, today }).rows[0].followUps[0];
+  assert.equal(beforeToday.endpointVisible, false);
+  assert.equal(beforeToday.width, 200);
+  const workView = buildTimelineLayout([historical], source.workspaces, timelineDay('2026-08-01'), { dayWidth: 10, days: 170, today }).rows[0];
+  assert.equal(workView.blocks[0].width, 31 * 10 - 2.4);
+  assert.equal(workView.blocks[1].left + workView.blocks[1].width, workView.followUps[0].left);
+});
+test('Taipei date crosses midnight independently of UTC and follow-up starts only after work ends', () => {
+  assert.equal(taipeiToday(new Date('2026-12-21T15:59:59Z')), '2026-12-21');
+  assert.equal(taipeiToday(new Date('2026-12-21T16:00:00Z')), '2026-12-22');
+  const project = { ...payload().projects[0], start: '2026-12', end: '2026-12', correctionStart: '', correctionEnd: '', followUp: ['payment'] };
+  assert.equal(projectFollowUp(project, timelineDay('2026-12-31')), null);
+  assert.equal(projectFollowUp(project, timelineDay('2027-01-01')).first, timelineDay('2027-01-01'));
+});
+test('overlapping production and revisions use separate lanes and tracking joins the latest phase', () => {
+  const source = payload();
+  const project = { ...source.projects[0], start: '2026-12-01', end: '2026-12-20', correctionStart: '2026-12-15', correctionEnd: '2026-12-22', followUp: ['payment'] };
+  const row = buildTimelineLayout([project], source.workspaces, timelineDay('2026-12-01'), { dayWidth: 10, today: timelineDay('2026-12-23') }).rows[0];
+  assert.notEqual(row.blocks[0].lane, row.blocks[1].lane);
+  assert.equal(row.followUps[0].lane, row.blocks[1].lane);
+  assert.ok(Math.abs(row.followUps[0].left - row.blocks[1].left - row.blocks[1].width) < 1e-9);
 });
 test('timeline retains overlap lanes, cross-workspace cases and year-spanning phases without date guesses', () => {
   const source = payload();
@@ -139,7 +202,7 @@ test('preview exposes only fictional reads and rejects writes, arguments, and ol
   try {
     const response=await rpc({method:'getTimeline'});
     const data=normalizeTimelinePayload(await response.json());
-    assert.equal(data.projects.length,9);
+    assert.equal(data.projects.length,12);
     assert.ok(data.projects.every((project)=>!project.customerCode || project.customerCode.startsWith('TEST-')));
     assert.equal((await rpc({method:'saveLayout',input:{}})).status,400);
     assert.equal((await rpc({method:'getTimeline',input:{source:'PRIVATE'}})).status,400);

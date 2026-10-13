@@ -1,5 +1,5 @@
 const scheduleElement = (id) => document.getElementById(id);
-const scheduleState = { payload: null, firstDay: null, loading: false, failed: false, layout: null, scale: null, viewPosition: null };
+const scheduleState = { payload: null, firstDay: null, today: null, loading: false, failed: false, layout: null, scale: null, viewPosition: null };
 const readSchedule = createGoogleBridge();
 let scheduleDetailsDialog;
 function scheduleNode(tag, className, text) {
@@ -9,7 +9,8 @@ function scheduleNode(tag, className, text) {
   return node;
 }
 function projectIdentity(project) { return project.customerCode ? scheduleText('customer', { code: project.customerCode }) : scheduleText('missingCustomer'); }
-function rangeText(start, end) { return (start || scheduleText('unspecified')) + ' → ' + (end || scheduleText('unspecified')); }
+function dateText(value) { return value ? value + (/^\d{4}-\d{2}$/.test(value) ? ' ' + scheduleText('monthPrecision') : '') : scheduleText('unspecified'); }
+function rangeText(start, end) { return dateText(start) + ' → ' + dateText(end); }
 function showScheduleDetails(block) {
   if (!scheduleDetailsDialog) {
     scheduleDetailsDialog = scheduleNode('dialog', 'project-details');
@@ -26,16 +27,21 @@ function showScheduleDetails(block) {
   close.setAttribute('aria-label', getScheduleLanguage() === 'en' ? 'Close project details' : '關閉專案資訊');
   close.addEventListener('click', () => scheduleDetailsDialog.close());
   const areas = project.workspaceIds.map((id) => id + ' × ' + project.workspaceUnits[id]).join(' · ');
-  scheduleDetailsDialog.replaceChildren(close, heading,
-    scheduleNode('p', 'details-customer', projectIdentity(project)),
-    scheduleNode('p', 'details-dates', scheduleText(block.phase) + ' · ' + rangeText(block.start, block.end)),
-    scheduleNode('p', 'details-workspaces', scheduleText('workspace') + ' ' + areas));
+  scheduleDetailsDialog.replaceChildren(close, heading, scheduleNode('p', 'details-customer', projectIdentity(project)));
+  for (const phase of projectPhases(project)) scheduleDetailsDialog.append(scheduleNode('p', 'details-dates', scheduleText(phase.phase) + ' · ' + rangeText(phase.start, phase.end)));
+  if (project.followUp.length) {
+    const states = scheduleNode('div', 'details-statuses');
+    for (const status of project.followUp) states.append(scheduleNode('span', 'status-tag', scheduleText(status)));
+    scheduleDetailsDialog.append(states);
+  }
+  if (block.phase === 'followUp') scheduleDetailsDialog.append(scheduleNode('p', 'details-note', scheduleText('followUpNote')));
+  scheduleDetailsDialog.append(scheduleNode('p', 'details-workspaces', scheduleText('workspace') + ' ' + areas));
   if (!scheduleDetailsDialog.open) scheduleDetailsDialog.showModal();
 }
 function renderScheduleChrome() {
   document.documentElement.lang = getScheduleLanguage();
   document.title = 'PM Studio｜' + scheduleText('title');
-  for (const [id, key] of Object.entries({ 'schedule-title': 'title', 'today-button': 'today', 'legend-production': 'production', 'legend-correction': 'correction', 'pending-title': 'pending', 'page-footer': 'footer', 'retry': 'retry', 'preview-note': 'preview' })) scheduleElement(id).textContent = scheduleText(key);
+  for (const [id, key] of Object.entries({ 'schedule-title': 'title', 'today-button': 'today', 'legend-production': 'production', 'legend-correction': 'correction', 'legend-reservation': 'reservation', 'legend-follow-up': 'followUp', 'pending-title': 'pending', 'page-footer': 'footer', 'retry': 'retry', 'preview-note': 'preview' })) scheduleElement(id).textContent = scheduleText(key);
   scheduleElement('previous').setAttribute('aria-label', scheduleText('previous'));
   scheduleElement('next').setAttribute('aria-label', scheduleText('next'));
   scheduleElement('timeline-viewport').setAttribute('aria-label', scheduleText('timeline'));
@@ -73,7 +79,7 @@ function renderSchedulePending() {
     const title = scheduleNode('div', 'card-heading');
     title.append(scheduleNode('span', 'card-id', project.id), scheduleNode('span', 'customer-code', projectIdentity(project)));
     card.append(title, scheduleNode('p', 'pending-reason', reasons.map((reason) => scheduleText(reason)).join(' · ')));
-    card.append(scheduleNode('p', 'pending-dates', scheduleText('production') + ' ' + rangeText(project.start, project.end)));
+    card.append(scheduleNode('p', 'pending-dates', scheduleText(project.scheduleKind) + ' ' + rangeText(project.start, project.end)));
     if (project.correctionStart || project.correctionEnd || reasons.includes('correction-dates')) card.append(scheduleNode('p', 'pending-dates', scheduleText('correction') + ' ' + rangeText(project.correctionStart, project.correctionEnd)));
     target.append(card);
   }
@@ -97,7 +103,8 @@ function renderScheduleTimeline(preserveScroll = false) {
     savedScroll = position.fraction * scale.dayWidth;
   }
   const { payload, firstDay } = scheduleState;
-  const layout = buildTimelineLayout(payload.projects, payload.workspaces, firstDay, scale);
+  const today = timelineDay(scheduleState.today);
+  const layout = buildTimelineLayout(payload.projects, payload.workspaces, firstDay, { ...scale, today });
   const dayWidth = scale.dayWidth;
   scheduleState.scale = scale;
   scheduleState.layout = layout;
@@ -132,13 +139,15 @@ function renderScheduleTimeline(preserveScroll = false) {
     const label = scheduleNode('div', 'workspace-label'); label.style.height = row.height + 'px';
     label.append(scheduleNode('span', 'workspace-letter', row.workspace.id), scheduleNode('span', 'workspace-description', workspaceText(row.workspace.id))); labels.append(label);
     const rule = scheduleNode('div', 'row-rule'); rule.style.top = row.top + row.height + 'px'; canvas.append(rule);
-    if (!row.blocks.length) { const empty = scheduleNode('span', 'empty-row', scheduleText('noWork')); empty.style.top = row.top + 43 + 'px'; canvas.append(empty); }
+    if (!row.blocks.length && !row.followUps.length) { const empty = scheduleNode('span', 'empty-row', scheduleText('noWork')); empty.style.top = row.top + 43 + 'px'; canvas.append(empty); }
     for (const block of row.blocks) {
       const project = block.project;
-      const card = scheduleNode('button', 'project-card' + (block.phase === 'correction' ? ' correction' : ''));
+      const card = scheduleNode('button', 'project-card ' + block.phase + (block.startPrecision === 'month' ? ' month-start' : '') + (block.endPrecision === 'month' ? ' month-end' : ''));
       card.setAttribute('type', 'button');
       card.setAttribute('data-project-id', project.id);
       card.setAttribute('data-phase', block.phase);
+      card.setAttribute('data-start-precision', block.startPrecision);
+      card.setAttribute('data-end-precision', block.endPrecision);
       card.style.left = block.left + 'px'; card.style.top = block.top + 'px'; card.style.width = block.width + 'px';
       card.setAttribute('tabindex', '0');
       const identity = project.id + ' · ' + projectIdentity(project);
@@ -151,10 +160,29 @@ function renderScheduleTimeline(preserveScroll = false) {
       card.addEventListener('click', () => showScheduleDetails(block));
       canvas.append(card);
     }
+    for (const followUp of row.followUps) {
+      const project = followUp.project;
+      const stem = scheduleNode('div', 'follow-up-stem' + (followUp.clippedStart ? ' clipped-start' : ''));
+      stem.setAttribute('aria-hidden', 'true');
+      stem.setAttribute('data-project-id', project.id);
+      stem.style.left = followUp.left + 'px'; stem.style.top = followUp.top + 'px'; stem.style.width = followUp.width + 'px';
+      canvas.append(stem);
+      if (followUp.endpointVisible) {
+        const endpoint = scheduleNode('button', 'follow-up-endpoint');
+        endpoint.setAttribute('type', 'button');
+        endpoint.setAttribute('data-project-id', project.id);
+        endpoint.setAttribute('data-phase', 'followUp');
+        const details = project.id + ' · ' + projectIdentity(project) + ' · ' + project.followUp.map((status) => scheduleText(status)).join(' · ');
+        endpoint.setAttribute('aria-label', details); endpoint.setAttribute('title', details);
+        endpoint.style.left = followUp.left + followUp.width - 22 + 'px'; endpoint.style.top = followUp.top - 22 + 'px';
+        endpoint.append(scheduleNode('span', 'follow-up-label', project.id));
+        endpoint.addEventListener('click', () => showScheduleDetails(followUp));
+        canvas.append(endpoint);
+      }
+    }
   }
-  const today = timelineDay(payload.today);
   if (today >= firstDay && today <= layout.lastDay) {
-    const line = scheduleNode('div', 'today-line'); line.style.left = (today - firstDay) * dayWidth + 'px';
+    const line = scheduleNode('div', 'today-line'); line.style.left = (today - firstDay + .5) * dayWidth + 'px';
     line.append(scheduleNode('span', 'today-label', scheduleText('today'))); canvas.append(line);
   }
   viewport.scrollLeft = savedScroll;
@@ -170,7 +198,7 @@ function updateScheduleRange() {
   const first = position.day;
   const last = Math.min(scheduleState.layout.lastDay, first + scheduleState.scale.visibleDays - 1);
   scheduleElement('date-range').textContent = timelineDate(first) + ' — ' + timelineDate(last);
-  const count = new Set(scheduleState.layout.rows.flatMap((row) => row.blocks).filter((block) => block.first <= last && block.last >= first).map((block) => block.project.id)).size;
+  const count = new Set(scheduleState.layout.rows.flatMap((row) => [...row.blocks, ...row.followUps]).filter((block) => block.first <= last && block.last >= first).map((block) => block.project.id)).size;
   scheduleElement('visible-count').textContent = scheduleText('visible', { count });
 }
 function renderSchedule(preserveScroll = false) {
@@ -185,7 +213,8 @@ async function loadSchedule() {
   try {
     const payload = normalizeTimelinePayload(await readSchedule());
     scheduleState.payload = payload;
-    if (scheduleState.firstDay === null) scheduleState.firstDay = timelineDay(payload.today) - 4;
+    scheduleState.today = taipeiToday();
+    if (scheduleState.firstDay === null) scheduleState.firstDay = timelineDay(scheduleState.today) - 4;
     scheduleState.failed = false;
   } catch { scheduleState.failed = true; }
   finally { scheduleState.loading = false; renderSchedule(true); }
@@ -205,7 +234,7 @@ scheduleElement('language-toggle').addEventListener('click', () => {
 });
 scheduleElement('previous').addEventListener('click', () => shiftSchedule(-1));
 scheduleElement('next').addEventListener('click', () => shiftSchedule(1));
-scheduleElement('today-button').addEventListener('click', () => { if (!scheduleState.payload) return; scheduleState.firstDay = timelineDay(scheduleState.payload.today) - 4; renderScheduleTimeline(); });
+scheduleElement('today-button').addEventListener('click', () => { if (!scheduleState.payload) return; scheduleState.today = taipeiToday(); scheduleState.firstDay = timelineDay(scheduleState.today) - 4; renderScheduleTimeline(); });
 scheduleElement('retry').addEventListener('click', loadSchedule);
 scheduleElement('timeline-viewport').addEventListener('scroll', updateScheduleRange, { passive: true });
 scheduleElement('timeline-viewport').addEventListener('keydown', (event) => { if (event.key === 'Home') { event.preventDefault(); scheduleElement('today-button').click(); } });
@@ -213,5 +242,13 @@ new ResizeObserver(() => {
   const width = scheduleElement('timeline-viewport').clientWidth;
   if (scheduleState.payload && width > 0 && width !== scheduleState.scale?.viewportWidth) renderScheduleTimeline(true);
 }).observe(scheduleElement('timeline-viewport'));
+function refreshScheduleDay() {
+  if (!scheduleState.payload) return;
+  const today = taipeiToday();
+  if (today !== scheduleState.today) { scheduleState.today = today; renderScheduleTimeline(true); }
+}
+// This only refreshes the open page's date; it does not schedule notifications or writes.
+if (typeof setInterval === 'function') setInterval(refreshScheduleDay, 60000);
+if (typeof document.addEventListener === 'function') document.addEventListener('visibilitychange', refreshScheduleDay);
 renderScheduleChrome();
 await loadSchedule();

@@ -6,6 +6,12 @@ export const SCHEDULE_TEXT = {
   workspace: ['工作區', 'Workspace'],
   production: ['製作', 'Production'],
   correction: ['修正', 'Revisions'],
+  reservation: ['時段預約', 'Reserved period'],
+  followUp: ['後續追蹤', 'Follow-up'],
+  'customer-confirmation': ['客戶確認中', 'Awaiting client confirmation'],
+  payment: ['待收款中', 'Awaiting payment'],
+  monthPrecision: ['（月份）', '(month)'],
+  followUpNote: ['追蹤至今天；等待事項不延長製作期間。', 'Tracked through today; pending follow-up does not extend production.'],
   pending: ['待排與待確認', 'To be scheduled / confirmed'],
   loading: ['正在讀取排程', 'Loading schedule'],
   loadError: ['無法讀取排程，請稍後重試。', 'Unable to load the schedule. Please try again.'],
@@ -28,6 +34,8 @@ export const SCHEDULE_TEXT = {
   'production-dates': ['製作日期待確認', 'Production dates need confirmation'],
   'correction-dates': ['修正日期待確認', 'Revision dates need confirmation'],
   'customer-code': ['客戶編號待確認', 'Client code needs confirmation'],
+  'schedule-kind': ['排程性質待確認', 'Schedule type needs confirmation'],
+  'follow-up-values': ['未結事項待確認', 'Follow-up details need confirmation'],
 };
 let scheduleLanguage = 'zh-Hant';
 export function setScheduleLanguage(language) { scheduleLanguage = language === 'en' ? 'en' : 'zh-Hant'; return scheduleLanguage; }

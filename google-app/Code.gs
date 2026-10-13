@@ -39,7 +39,7 @@ function getTimeline() {
       || rows.some(function(row) { return !Array.isArray(row) || row.length > 64; })) throw new Error('source');
     const result = publicRows_(rows.slice(4));
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       today: Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd'),
       syncedAt: new Date().toISOString(),
       projects: result.projects,
@@ -71,6 +71,16 @@ function publicRows_(rows) {
     const customerCode = /^[A-Z]+-\d+$/u.test(rawCustomer) ? rawCustomer : '';
     if (!customerCode) pending.add('customer-code');
 
+    // These optional source columns allow an older sheet to remain readable while
+    // it is upgraded. Public values are fixed enums, never free-form status text.
+    const rawScheduleKind = field('排程性質');
+    const scheduleKind = rawScheduleKind === '時段預約' ? 'reservation' : 'production';
+    if (rawScheduleKind && !['製作排程', '時段預約'].includes(rawScheduleKind)) pending.add('schedule-kind');
+    const rawFollowUp = field('未結事項');
+    const parsedFollowUp = followUp_(rawFollowUp);
+    if (parsedFollowUp === null) pending.add('follow-up-values');
+    const followUp = parsedFollowUp || [];
+
     let rawStart = field('目前排程開始'), rawEnd = field('目前排程結束');
     const supplement = field('延長修正／補充');
     if (!rawStart && !rawEnd && !rescheduled_(supplement)) {
@@ -81,7 +91,8 @@ function publicRows_(rows) {
     const rawCorrectionStart = field('修正開始'), rawCorrectionEnd = field('修正結束');
     const correctionStart = dateText_(rawCorrectionStart), correctionEnd = dateText_(rawCorrectionEnd);
     if ((rawCorrectionStart || rawCorrectionEnd) && !validRange_(correctionStart, correctionEnd)
-      || !rawCorrectionStart && !rawCorrectionEnd && correctionPending_(supplement)) pending.add('correction-dates');
+      || !rawCorrectionStart && !rawCorrectionEnd && !(rawFollowUp && parsedFollowUp !== null)
+        && correctionPending_(supplement)) pending.add('correction-dates');
 
     const workspaceIds = [], workspaceUnits = {};
     PM_SCHEDULE_.workspaces.forEach(function(workspace) {
@@ -96,6 +107,7 @@ function publicRows_(rows) {
     // Construct the response field by field. Never spread a source row or private object.
     projects.push({ id: id, customerCode: customerCode, start: start, end: end,
       correctionStart: correctionStart, correctionEnd: correctionEnd,
+      scheduleKind: scheduleKind, followUp: followUp,
       workspaceIds: workspaceIds, workspaceUnits: workspaceUnits, pendingReasons: Array.from(pending) });
   });
   return { projects: projects, warnings: Array.from(warnings) };
@@ -112,8 +124,30 @@ function parseDay_(value) {
 }
 
 function validRange_(start, end) {
-  const first = parseDay_(start), last = parseDay_(end);
+  const first = dateBoundary_(start, false), last = dateBoundary_(end, true);
   return first !== null && last !== null && first <= last;
+}
+
+function dateBoundary_(value, last) {
+  if (!/^\d{4}-\d{2}$/u.test(value)) return parseDay_(value);
+  const first = parseDay_(value + '-01');
+  if (first === null) return null;
+  if (!last) return first;
+  // Calendar envelopes are display/validation bounds only. The original month
+  // string remains in the payload and is never converted to a claimed exact day.
+  const date = new Date(first * 86400000);
+  date.setUTCMonth(date.getUTCMonth() + 1, 0);
+  return Math.floor(date.getTime() / 86400000);
+}
+
+function followUp_(value) {
+  if (!value || value === '已處理') return [];
+  const labels = { '客戶確認中': 'customer-confirmation', '待收款中': 'payment' };
+  const tokens = value.split(/[、,，\r\n]+/u).map(text_).filter(Boolean);
+  if (!tokens.length || tokens.some(function(token) { return !Object.prototype.hasOwnProperty.call(labels, token); })) return null;
+  // Canonical order and exact token matching keep even malformed private notes
+  // from entering the response or being mistaken for an authorized status.
+  return Object.keys(labels).filter(function(label) { return tokens.includes(label); }).map(function(label) { return labels[label]; });
 }
 
 function rescheduled_(value) {

@@ -19,9 +19,9 @@ export function createPreviewPayload(now = new Date()) {
   const base = Date.parse(today + 'T00:00:00Z');
   const date = (offset) => new Date(base + offset * 86400000).toISOString().slice(0, 10);
   const project = (id, customerCode, start, end, workspaceUnits, correctionStart = '', correctionEnd = '', pendingReasons = []) =>
-    ({ id, customerCode, start, end, correctionStart, correctionEnd, workspaceIds: Object.keys(workspaceUnits), workspaceUnits, pendingReasons });
+    ({ id, customerCode, start, end, correctionStart, correctionEnd, workspaceIds: Object.keys(workspaceUnits), workspaceUnits, pendingReasons, scheduleKind: 'production', followUp: [] });
   return {
-    schemaVersion: 2, today, syncedAt: now.toISOString(),
+    schemaVersion: 3, today, syncedAt: now.toISOString(),
     workspaces: [{ id: 'A', name: '角色模型 A', usualLoad: 2 }, { id: 'B', name: '角色模型 B', usualLoad: 2 }, { id: 'C', name: '角色與場景' }, { id: 'D', name: 'CT 美術' }], warnings: [],
     projects: [
       project('C-901', 'TEST-01', date(-16), date(26), { A: 2 }, date(31), date(44)),
@@ -33,6 +33,9 @@ export function createPreviewPayload(now = new Date()) {
       project('C-904', 'TEST-07', date(15), date(72), {}, '', '', ['no-workspace']),
       project('C-905', '', date(12).slice(0, 7), '', { B: 1 }, '', '', ['production-dates', 'customer-code']),
       project('BG-902', 'TEST-08', date(-25), date(-6), { C: 2 }, date(3), '', ['correction-dates']),
+      { ...project('C-906', 'TEST-09', date(-32).slice(0, 7), date(16), { A: 1 }), followUp: [] },
+      { ...project('C-907', 'TEST-10', date(-96), date(-45), { B: 1 }), followUp: ['customer-confirmation', 'payment'] },
+      { ...project('O-902', 'TEST-11', date(70).slice(0, 7), date(135).slice(0, 7), { C: 1 }), scheduleKind: 'reservation' },
     ],
   };
 }

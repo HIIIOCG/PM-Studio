@@ -86,21 +86,25 @@ function browserDocument(html) {
   return { document, elements };
 }
 
-async function mount(html, value, { preferences = new Map(), blockedStorage = false, failInitially = false, width = 900, measureHidden = false } = {}) {
+async function mount(html, value, { preferences = new Map(), blockedStorage = false, failInitially = false, width = 900, measureHidden = false, now = value.syncedAt } = {}) {
   const { document, elements } = browserDocument(html);
   const viewport = elements.get('timeline-viewport');
   Object.defineProperty(viewport, 'clientWidth', { get() { return measureHidden && elements.get('timeline-grid').hidden ? 0 : width; } });
-  let onResize;
+  let onResize, onDayRefresh;
+  let clock = new Date(now).getTime();
+  class BrowserDate extends Date { constructor(...args) { super(...(args.length ? args : [clock])); } static now() { return clock; } }
   let fail=failInitially, payload=value;
   const calls=[];
   const runner={withSuccessHandler(fn){this.ok=fn;return this;},withFailureHandler(fn){this.bad=fn;return this;},getTimeline(...args){calls.push(args);if(fail)this.bad(new Error('PRIVATE_SOURCE_ID'));else this.ok(payload);}};
-  const context=createContext({document,Intl,Date,Map,Set,console,google:{script:{run:runner}},
+  const context=createContext({document,Intl,Date:BrowserDate,Map,Set,console,google:{script:{run:runner}},
     localStorage:{getItem(key){if(blockedStorage)throw new Error('blocked');return preferences.get(key)||null;},setItem(key,value){if(blockedStorage)throw new Error('blocked');preferences.set(key,value);}},
     ResizeObserver:class{constructor(callback){onResize=callback;}observe(){}},
+    setInterval(callback, interval) { assert.equal(interval, 60000); onDayRefresh = callback; },
   });
   for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) await new Script(match[1]).runInContext(context);
   const get=(id)=>{const node=elements.get(id);assert.ok(node,id);return node;};
   return {document,get,calls,preferences,fail(value){fail=value;},payload(value){payload=value;},click(id){return get(id).click();},
+    advanceClock(value) { clock = new Date(value).getTime(); onDayRefresh(); },
     resize(nextWidth, clampBeforeObserver = false) {
       width = nextWidth;
       if (clampBeforeObserver) {
@@ -221,6 +225,69 @@ test('single-day bars are native keyboard buttons with full details on activatio
   assert.equal(parseFloat(card.style.width), width);
   await page.click('close-project-details');
   assert.equal(page.get('project-details').open, false);
+});
+test('known-month bars and reservations stay on the timeline with month labels in both languages', async(t) => {
+  const value = sample();
+  value.projects = [
+    { ...value.projects[0], start: '2026-12', end: '2027-01-31', correctionStart: '', correctionEnd: '' },
+    { ...value.projects[1], scheduleKind: 'reservation', start: '2027-01', end: '2027-03', correctionStart: '', correctionEnd: '' },
+  ];
+  const page = await mount(await fixture(t), value);
+  assert.equal(page.get('pending-section').hidden, true);
+  const card = page.get('timeline-canvas').querySelector('.reservation');
+  assert.equal(card.getAttribute('data-start-precision'), 'month');
+  assert.match(card.getAttribute('aria-label'), /時段預約.*2027-01 （月份） → 2027-03 （月份）/);
+  await card.click();
+  assert.match(page.get('project-details').textContent, /時段預約.*2027-01 （月份）/);
+  await page.click('close-project-details');
+  await page.click('language-toggle');
+  const english = page.get('timeline-canvas').querySelector('.reservation');
+  assert.match(english.getAttribute('aria-label'), /Reserved period.*2027-01 \(month\)/);
+  assert.equal(page.get('legend-reservation').textContent, 'Reserved period');
+});
+test('historic follow-up endpoints open public fixed statuses and keep a mobile touch target', async(t) => {
+  const value = sample();
+  value.projects = [{ ...value.projects.find((project) => project.id === 'C-907') }];
+  const page = await mount(await fixture(t), value, { width: 212 });
+  assert.equal(page.get('pending-section').hidden, true);
+  assert.equal(page.get('timeline-canvas').querySelectorAll('.project-card').length, 0);
+  assert.equal(page.get('visible-count').textContent, '目前區間 1 案');
+  const endpoint = page.get('timeline-canvas').querySelector('.follow-up-endpoint');
+  assert.equal(endpoint.tagName, 'BUTTON');
+  assert.match(endpoint.getAttribute('aria-label'), /C-907.*客戶確認中.*待收款中/);
+  assert.ok(page.get('timeline-canvas').querySelector('.clipped-start'));
+  await endpoint.click();
+  assert.equal(page.get('project-details').open, true);
+  assert.match(page.get('project-details').textContent, /客戶確認中待收款中/);
+  assert.match(page.get('project-details').textContent, /不延長製作期間/);
+  await page.click('close-project-details');
+  await page.click('language-toggle');
+  await page.get('timeline-canvas').querySelector('.follow-up-endpoint').click();
+  assert.match(page.get('project-details').textContent, /Awaiting client confirmationAwaiting payment/);
+  await page.click('close-project-details');
+  value.projects[0].followUp = [];
+  page.payload(value);
+  await page.click('retry');
+  assert.equal(page.get('timeline-canvas').querySelectorAll('.follow-up-endpoint').length, 0);
+  assert.equal(page.get('visible-count').textContent, '0 projects in view');
+});
+test('an open page advances tracking at Taipei midnight without a cloud write, reload, or viewport jump', async(t) => {
+  const value = sample();
+  value.projects = [{ ...value.projects.find((project) => project.id === 'C-907') }];
+  const page = await mount(await fixture(t), value, { now: '2026-12-21T15:59:59Z' });
+  const viewport = page.get('timeline-viewport');
+  viewport.scrollLeft = 5;
+  viewport.listeners.get('scroll')();
+  const range = page.get('date-range').textContent;
+  const before = parseFloat(page.get('timeline-canvas').querySelector('.follow-up-endpoint').style.left);
+  page.advanceClock('2026-12-21T16:00:01Z');
+  const after = parseFloat(page.get('timeline-canvas').querySelector('.follow-up-endpoint').style.left);
+  assert.ok(Math.abs(after - before - 900 / 84) < 1e-9);
+  assert.equal(page.get('date-range').textContent, range);
+  assert.equal(viewport.scrollLeft, 5);
+  assert.equal(page.calls.length, 1);
+  const reopened = await mount(await fixture(t), value, { now: '2026-12-21T16:00:01Z' });
+  assert.match(reopened.get('date-range').textContent, /^2026-12-18/);
 });
 test('initial service failure has no demo fallback; retry recovers and private errors never render',async(t)=>{
   const page=await mount(await fixture(t),sample(),{failInitially:true});
