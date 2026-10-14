@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, sep } from 'node:path';
 import { Script } from 'node:vm';
-import { normalizeTimelinePayload, PENDING_REASONS } from '../ui/common-contract.mjs';
+import { normalizeTimelinePayload, PENDING_REASONS, CUSTOMER_TYPES, PROJECT_DETAIL_FIELDS } from '../ui/common-contract.mjs';
 import { createGoogleBridge } from '../ui/bridge.mjs';
 import { timelineDay, timelineDateBounds, timelineRange, taipeiToday, timelineScale, timelineScrollPosition, preciseTimelineRange, projectPendingReasons, projectFollowUp, buildTimelineLayout } from '../../web/dist/app.mjs';
 import { buildGoogleUi } from '../../scripts/build-google-ui.mjs';
@@ -21,10 +21,13 @@ test('single public contract preserves IDs, codes, four workspaces, and flexible
   assert.equal(result.projects[0].customerCode, 'TEST-01');
   assert.equal(result.projects[0].workspaceUnits.A, 9);
   assert.deepEqual(result.workspaces.map((space) => space.id), ['A','B','C','D']);
-  assert.deepEqual(PENDING_REASONS, ['no-workspace','workspace-values','production-dates','correction-dates','customer-code','schedule-kind','follow-up-values']);
+  assert.deepEqual(PENDING_REASONS, ['no-workspace','workspace-values','production-dates','correction-dates','customer-code','customer-type','schedule-kind','follow-up-values']);
+  assert.deepEqual(CUSTOMER_TYPES, ['VTuber個人', 'VTuber公司', '遊戲公司', '其他']);
+  assert.equal(result.projects[0].customerType, 'VTuber個人');
+  for (const field of PROJECT_DETAIL_FIELDS) assert.equal(result.projects[0][field], source.projects[0][field]);
 });
-test('client contract rejects extra private fields, leaked names, unknown reasons, and malformed allocations', () => {
-  for (const field of ['name','customer','owner','goal','sourceLinks','status','alias']) {
+test('client contract rejects non-allowlisted fields, unknown reasons, and malformed allocations', () => {
+  for (const field of ['goal','sourceLinks','sourceUrl','originalRow','sourceId','alias']) {
     const data = payload(); data.projects[0][field] = 'PRIVATE';
     assert.throws(() => normalizeTimelinePayload(data));
   }
@@ -44,6 +47,20 @@ test('client contract rejects extra private fields, leaked names, unknown reason
   assert.throws(() => normalizeTimelinePayload(badRoot));
   const duplicate = payload(); duplicate.projects.push(duplicate.projects[0]);
   assert.throws(() => normalizeTimelinePayload(duplicate));
+});
+test('public detail text and client types remain explicit, bounded, and required', () => {
+  for (const field of PROJECT_DETAIL_FIELDS) {
+    const missing = payload(); delete missing.projects[0][field]; assert.throws(() => normalizeTimelinePayload(missing));
+    for (const value of [null, {}, 1, 'x'.repeat(4001)]) { const bad = payload(); bad.projects[0][field] = value; assert.throws(() => normalizeTimelinePayload(bad)); }
+    const allowed = payload(); allowed.projects[0][field] = 'x'.repeat(4000); assert.equal(normalizeTimelinePayload(allowed).projects[0][field].length, 4000);
+  }
+  for (const customerType of [...CUSTOMER_TYPES, '']) {
+    const data = payload(); data.projects[0].customerType = customerType; assert.equal(normalizeTimelinePayload(data).projects[0].customerType, customerType);
+  }
+  for (const customerType of ['VTuber', '個人', '<b>其他</b>', null, 1]) {
+    const data = payload(); data.projects[0].customerType = customerType; assert.throws(() => normalizeTimelinePayload(data));
+  }
+  const missing = payload(); delete missing.projects[0].customerType; assert.throws(() => normalizeTimelinePayload(missing));
 });
 test('missing, impossible and reversed dates remain pending; valid corrections stay visible', () => {
   assert.equal(timelineDay('2028-02-29') !== null, true);

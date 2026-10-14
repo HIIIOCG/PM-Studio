@@ -3,14 +3,9 @@ import { normalizeInternalTimelinePayload } from './internal-contract.mjs';
 const INTERNAL_TEXT = Object.freeze({
   title: ['團隊專案排程', 'Team project schedule'],
   access: ['排程畫面為唯讀。', 'This schedule is read-only.'],
-  unnamed: ['專案名稱未填', 'Project name not provided'],
-  details: ['查看專案資訊', 'View project details'],
-  customer: ['客戶', 'Client'], owner: ['負責人', 'Owner'], status: ['狀態', 'Status'],
-  deliveryGoal: ['目前交付目標', 'Current delivery goal'], notes: ['延長修正／補充', 'Revision / additional notes'],
-  contact: ['窗口', 'Contact'], assignee: ['執行者', 'Assignee'], deliverySteps: ['交付步驟（參考）', 'Delivery steps (reference)'],
 });
 function internalText(key) { return INTERNAL_TEXT[key]?.[getScheduleLanguage() === 'en' ? 1 : 0] || key; }
-function projectName(project) { return project.name || internalText('unnamed'); }
+function projectName(project) { return project.name || scheduleText('unnamed'); }
 function fullProjectIdentity(project) { return project.id + ' · ' + projectName(project) + ' · ' + projectIdentity(project); }
 const scheduleElement = (id) => document.getElementById(id);
 const scheduleState = { payload: null, firstDay: null, today: null, loading: false, failed: false, layout: null, scale: null, viewPosition: null };
@@ -22,7 +17,9 @@ function scheduleNode(tag, className, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
-function projectIdentity(project) { return project.customerCode ? scheduleText('customer', { code: project.customerCode }) : scheduleText('missingCustomer'); }
+function projectCustomerCode(project) { return project.customerCode ? scheduleText('customer', { code: project.customerCode }) : scheduleText('missingCustomer'); }
+function projectCustomerType(project) { return project.customerType ? scheduleText(project.customerType) : scheduleText('missingCustomerType'); }
+function projectIdentity(project) { return projectCustomerCode(project) + ' · ' + projectCustomerType(project); }
 function dateText(value) { return value ? value + (/^\d{4}-\d{2}$/.test(value) ? ' ' + scheduleText('monthPrecision') : '') : scheduleText('unspecified'); }
 function rangeText(start, end) { return dateText(start) + ' → ' + dateText(end); }
 function showScheduleDetails(block) {
@@ -41,10 +38,11 @@ function showScheduleDetails(block) {
   close.setAttribute('aria-label', getScheduleLanguage() === 'en' ? 'Close project details' : '關閉專案資訊');
   close.addEventListener('click', () => scheduleDetailsDialog.close());
   const areas = project.workspaceIds.map((id) => id + ' × ' + project.workspaceUnits[id]).join(' · ');
-  scheduleDetailsDialog.replaceChildren(close, heading, scheduleNode('p', 'details-customer', projectIdentity(project)));
-  const fields = scheduleNode('dl', 'internal-project-fields');
+  scheduleDetailsDialog.replaceChildren(close, heading, scheduleNode('p', 'details-customer', projectCustomerCode(project)));
+  const fields = scheduleNode('dl', 'project-fields');
+  fields.append(scheduleNode('dt', '', scheduleText('customerType')), scheduleNode('dd', '', projectCustomerType(project)));
   for (const key of ['customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps']) {
-    fields.append(scheduleNode('dt', '', internalText(key)), scheduleNode('dd', '', project[key] || scheduleText('unspecified')));
+    fields.append(scheduleNode('dt', '', scheduleText(key === 'customer' ? 'clientName' : key)), scheduleNode('dd', '', project[key] || scheduleText('unspecified')));
   }
   scheduleDetailsDialog.append(fields);
   for (const phase of projectPhases(project)) scheduleDetailsDialog.append(scheduleNode('p', 'details-dates', scheduleText(phase.phase) + ' · ' + rangeText(phase.start, phase.end)));
@@ -99,12 +97,12 @@ function renderSchedulePending() {
     const card = scheduleNode('article', 'pending-card');
     const title = scheduleNode('div', 'card-heading');
     title.append(scheduleNode('span', 'card-id', project.id), scheduleNode('span', 'project-name', projectName(project)));
-    card.append(title, scheduleNode('p', 'pending-reason', reasons.map((reason) => scheduleText(reason)).join(' · ')));
+    card.append(title, scheduleNode('p', 'customer-code', projectIdentity(project)), scheduleNode('p', 'pending-reason', reasons.map((reason) => scheduleText(reason)).join(' · ')));
     card.append(scheduleNode('p', 'pending-dates', scheduleText(project.scheduleKind) + ' ' + rangeText(project.start, project.end)));
     if (project.correctionStart || project.correctionEnd || reasons.includes('correction-dates')) card.append(scheduleNode('p', 'pending-dates', scheduleText('correction') + ' ' + rangeText(project.correctionStart, project.correctionEnd)));
-    const details = scheduleNode('button', 'pending-details', internalText('details'));
+    const details = scheduleNode('button', 'pending-details', scheduleText('details'));
     details.setAttribute('type', 'button');
-    details.setAttribute('aria-label', internalText('details') + ' · ' + fullProjectIdentity(project));
+    details.setAttribute('aria-label', scheduleText('details') + ' · ' + fullProjectIdentity(project));
     details.addEventListener('click', () => showScheduleDetails({ project, phase: 'pending' }));
     card.append(details);
     target.append(card);
@@ -181,7 +179,7 @@ function renderScheduleTimeline(preserveScroll = false) {
       card.setAttribute('aria-label', details); card.setAttribute('title', details);
       const heading = scheduleNode('div', 'card-heading'); heading.append(scheduleNode('span', 'card-id', project.id), scheduleNode('span', 'project-name', projectName(project)));
       const content = scheduleNode('span', 'card-content');
-      content.append(heading, scheduleNode('span', 'card-dates', rangeText(block.start, block.end)), scheduleNode('span', 'card-meta', scheduleText(block.phase) + ' · ' + project.workspaceIds.join(' + ') + ' · ' + String(project.workspaceUnits[row.workspace.id])));
+      content.append(heading, scheduleNode('span', 'card-dates', rangeText(block.start, block.end)), scheduleNode('span', 'card-meta', projectIdentity(project) + ' · ' + scheduleText(block.phase) + ' · ' + project.workspaceIds.join(' + ') + ' · ' + String(project.workspaceUnits[row.workspace.id])));
       card.append(content);
       card.addEventListener('click', () => showScheduleDetails(block));
       canvas.append(card);

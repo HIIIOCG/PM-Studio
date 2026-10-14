@@ -18,8 +18,13 @@ export function createPreviewPayload(now = new Date()) {
   const today = previewDay(now);
   const base = Date.parse(today + 'T00:00:00Z');
   const date = (offset) => new Date(base + offset * 86400000).toISOString().slice(0, 10);
+  const customerTypes = ['VTuber個人', 'VTuber公司', '遊戲公司', '其他'];
+  let projectIndex = 0;
   const project = (id, customerCode, start, end, workspaceUnits, correctionStart = '', correctionEnd = '', pendingReasons = []) =>
-    ({ id, customerCode, start, end, correctionStart, correctionEnd, workspaceIds: Object.keys(workspaceUnits), workspaceUnits, pendingReasons, scheduleKind: 'production', followUp: [] });
+    ({ id, customerCode, customerType: customerTypes[projectIndex++ % customerTypes.length],
+      name: 'Fictional project ' + id, customer: 'Fictional client', owner: 'Fictional owner', status: 'Fictional status',
+      deliveryGoal: 'Fictional delivery goal', notes: 'Fictional notes\nSecond line', contact: 'Fictional contact', assignee: 'Fictional assignee', deliverySteps: 'Fictional delivery steps',
+      start, end, correctionStart, correctionEnd, workspaceIds: Object.keys(workspaceUnits), workspaceUnits, pendingReasons, scheduleKind: 'production', followUp: [] });
   return {
     schemaVersion: 3, today, syncedAt: now.toISOString(),
     workspaces: [{ id: 'A', name: '角色模型 A', usualLoad: 2 }, { id: 'B', name: '角色模型 B', usualLoad: 2 }, { id: 'C', name: '角色與場景' }, { id: 'D', name: 'CT 美術' }], warnings: [],

@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeTimelinePayload, SCHEDULE_KINDS, FOLLOW_UP_STATUSES } from '../ui/common-contract.mjs';
+import { normalizeTimelinePayload, SCHEDULE_KINDS, FOLLOW_UP_STATUSES, CUSTOMER_TYPES, PROJECT_DETAIL_FIELDS } from '../ui/common-contract.mjs';
 
 const payload = () => ({
   schemaVersion: 3, today: '2026-10-13', syncedAt: '2026-10-13T00:00:00.000Z',
   workspaces: ['A', 'B', 'C', 'D'].map(id => ({ id, name: '工作區 ' + id })), warnings: [],
-  projects: [{ id: 'C-999', customerCode: 'DEMO-001', start: '2027-04', end: '2027-06',
+  projects: [{ id: 'C-999', customerCode: 'DEMO-001', customerType: 'VTuber個人', start: '2027-04', end: '2027-06',
     correctionStart: '', correctionEnd: '', scheduleKind: 'reservation',
-    followUp: ['customer-confirmation', 'payment'], workspaceIds: ['A'], workspaceUnits: { A: 1 }, pendingReasons: [] }]
+    followUp: ['customer-confirmation', 'payment'], workspaceIds: ['A'], workspaceUnits: { A: 1 }, pendingReasons: [],
+    ...Object.fromEntries(PROJECT_DETAIL_FIELDS.map(key => [key, 'Fictional ' + key])) }]
 });
 
 test('schema 3 preserves source month precision and independent public reservation/follow-up enums', () => {
@@ -29,7 +30,7 @@ test('schema 3 refuses older versions, missing new keys and unknown free-form st
     const source = payload(); source.schemaVersion = version;
     assert.throws(() => normalizeTimelinePayload(source));
   }
-  for (const key of ['scheduleKind', 'followUp']) {
+  for (const key of ['scheduleKind', 'followUp', 'customerType', ...PROJECT_DETAIL_FIELDS]) {
     const source = payload(); delete source.projects[0][key];
     assert.throws(() => normalizeTimelinePayload(source));
   }
@@ -43,11 +44,31 @@ test('schema 3 refuses older versions, missing new keys and unknown free-form st
   }
 });
 
-test('new source-data issues use fixed pending codes and public detail rejects raw private fields', () => {
-  const source = payload(); source.projects[0].pendingReasons = ['schedule-kind', 'follow-up-values'];
-  assert.deepEqual(normalizeTimelinePayload(source).projects[0].pendingReasons, ['schedule-kind', 'follow-up-values']);
-  for (const key of ['status', 'followUpNote', 'paymentAmount', 'customerName', 'sourceUrl']) {
+test('new source-data issues use fixed pending codes and public detail rejects unauthorized fields', () => {
+  const source = payload(); source.projects[0].pendingReasons = ['schedule-kind', 'follow-up-values', 'customer-type'];
+  assert.deepEqual(normalizeTimelinePayload(source).projects[0].pendingReasons, ['schedule-kind', 'follow-up-values', 'customer-type']);
+  for (const key of ['followUpNote', 'paymentAmount', 'customerName', 'sourceUrl', '資料', 'rawRow', 'settings']) {
     const privateSource = payload(); privateSource.projects[0][key] = 'SecretValue';
     assert.throws(() => normalizeTimelinePayload(privateSource));
+  }
+});
+
+test('both customer-type values and bounded project detail fields are validated explicitly', () => {
+  assert.deepEqual(CUSTOMER_TYPES, ['VTuber個人', 'VTuber公司', '遊戲公司', '其他']);
+  for (const customerType of ['', ...CUSTOMER_TYPES]) {
+    const source = payload(); source.projects[0].customerType = customerType;
+    assert.equal(normalizeTimelinePayload(source).projects[0].customerType, customerType);
+  }
+  for (const customerType of ['VTuber', 'SecretValue', [], {}, null, 1]) {
+    const source = payload(); source.projects[0].customerType = customerType;
+    assert.throws(() => normalizeTimelinePayload(source));
+  }
+  for (const field of PROJECT_DETAIL_FIELDS) {
+    for (const value of [undefined, null, 1, {}, 'x'.repeat(4001)]) {
+      const source = payload(); source.projects[0][field] = value;
+      assert.throws(() => normalizeTimelinePayload(source));
+    }
+    const source = payload(); source.projects[0][field] = '<script>' + 'x'.repeat(3983) + '</script>';
+    assert.equal(normalizeTimelinePayload(source).projects[0][field], source.projects[0][field]);
   }
 });

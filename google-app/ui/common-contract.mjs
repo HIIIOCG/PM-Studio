@@ -1,4 +1,6 @@
-export const PENDING_REASONS = Object.freeze(['no-workspace', 'workspace-values', 'production-dates', 'correction-dates', 'customer-code', 'schedule-kind', 'follow-up-values']);
+export const PENDING_REASONS = Object.freeze(['no-workspace', 'workspace-values', 'production-dates', 'correction-dates', 'customer-code', 'customer-type', 'schedule-kind', 'follow-up-values']);
+export const CUSTOMER_TYPES = Object.freeze(['VTuber個人', 'VTuber公司', '遊戲公司', '其他']);
+export const PROJECT_DETAIL_FIELDS = Object.freeze(['name', 'customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps']);
 export const SCHEDULE_WARNINGS = Object.freeze(['project-id-missing', 'project-id-invalid']);
 export const SCHEDULE_KINDS = Object.freeze(['production', 'reservation']);
 export const FOLLOW_UP_STATUSES = Object.freeze(['customer-confirmation', 'payment']);
@@ -24,10 +26,14 @@ export function normalizeTimelinePayload(payload) {
   if (!Array.isArray(payload.projects) || payload.projects.length > 1000) throw new Error('Invalid projects.');
   const ids = new Set();
   const projects = payload.projects.map((project) => {
-    scheduleKeys(project, ['id', 'customerCode', 'start', 'end', 'correctionStart', 'correctionEnd', 'scheduleKind', 'followUp', 'workspaceIds', 'workspaceUnits', 'pendingReasons']);
+    scheduleKeys(project, ['id', 'customerCode', 'customerType', 'start', 'end', 'correctionStart', 'correctionEnd', 'scheduleKind', 'followUp', 'workspaceIds', 'workspaceUnits', 'pendingReasons', ...PROJECT_DETAIL_FIELDS]);
     if (typeof project.id !== 'string' || !/^(?:C|BG|P|D|O)-\d{3,}$/.test(project.id) || ids.has(project.id)) throw new Error('Invalid project ID.');
     ids.add(project.id);
     if (typeof project.customerCode !== 'string' || (project.customerCode !== '' && !/^[A-Z]+-\d+$/.test(project.customerCode))) throw new Error('Invalid customer code.');
+    if (typeof project.customerType !== 'string' || (project.customerType !== '' && !CUSTOMER_TYPES.includes(project.customerType))) throw new Error('Invalid customer type.');
+    for (const key of PROJECT_DETAIL_FIELDS) {
+      if (typeof project[key] !== 'string' || project[key].length > 4000) throw new Error('Invalid project text.');
+    }
     for (const key of ['start', 'end', 'correctionStart', 'correctionEnd']) scheduleDateValue(project[key]);
     if (!SCHEDULE_KINDS.includes(project.scheduleKind)) throw new Error('Invalid schedule kind.');
     if (!Array.isArray(project.followUp) || project.followUp.length > FOLLOW_UP_STATUSES.length

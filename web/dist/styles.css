@@ -66,9 +66,12 @@ h1 { margin: 0; font-size: 29px; letter-spacing: .025em; font-weight: 650; }
 .follow-up-endpoint::before { content: ''; position: absolute; left: 15px; top: 15px; width: 14px; height: 14px; border: 2px solid #f1da9f; border-radius: 50%; background: #c9a75f; box-shadow: 0 0 0 4px #20262b; }
 .follow-up-endpoint:hover, .follow-up-endpoint:focus-visible { background: #d1b67622; }
 .follow-up-label { position: absolute; left: 39px; top: 14px; padding: 2px 5px; border-radius: 4px; background: #20262b; color: #ddc88f; white-space: nowrap; font-size: 11px; line-height: 1.3; }
-.project-details { width: min(400px, calc(100vw - 32px)); padding: 25px; border: 1px solid #60788a; border-radius: 14px; color: #e4edf4; background: #263540; box-shadow: 0 16px 50px #0008; }
+.project-details { width: min(660px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 25px; border: 1px solid #60788a; border-radius: 14px; color: #e4edf4; background: #263540; box-shadow: 0 16px 50px #0008; }
 .project-details::backdrop { background: #09121bbb; }
-.project-details h2 { font-size: 20px; color: #e4edf4; padding-right: 30px; }
+.project-details h2 { font-size: 20px; color: #e4edf4; padding-right: 30px; overflow-wrap: anywhere; line-height: 1.5; }
+.project-fields { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 11px 14px; margin: 18px 0; font-size: 13px; line-height: 1.7; }
+.project-fields dt { color: #a6bfce; }
+.project-fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .details-close { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; font-size: 21px; line-height: 1; }
 .details-customer { color: #a6bfce; font-size: 13px; margin: 8px 0 20px; }
 .details-dates { font-size: 13px; line-height: 1.8; font-variant-numeric: tabular-nums; }
@@ -89,6 +92,8 @@ h2 { margin: 0; font-size: 15px; font-weight: 600; color: #b7c7d3; }
 .count-badge { border: 1px solid var(--border); border-radius: 12px; padding: 1px 7px; font-size: 10px; color: #91a7b6; }
 .pending-projects { display: grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap: 10px; }
 .pending-card { border: 1px solid var(--border); background: #1c242b; padding: 14px 16px; border-radius: 10px; }
+.pending-card .card-heading { flex-wrap: wrap; white-space: normal; }
+.pending-details { margin-top: 11px; padding: 6px 10px; font-size: 11px; }
 .pending-reason { font-size: 11px; color: #b9a38a; margin: 8px 0 5px; line-height: 1.6; }
 .pending-dates { font-size: 10px; line-height: 1.8; color: #8fa6b6; margin: 0; font-variant-numeric: tabular-nums; }
 .page-footer { margin-top: 22px; color: #7d929f; font-size: 11px; line-height: 1.6; }
@@ -108,4 +113,6 @@ h2 { margin: 0; font-size: 15px; font-weight: 600; color: #b7c7d3; }
   .label-axis { padding: 25px 10px; font-size: 10px; }
   .timeline-footer { padding: 12px; line-height: 1.6; }
   .pending-projects { grid-template-columns: 1fr; }
+  .project-fields { grid-template-columns: 1fr; gap: 2px; }
+  .project-fields dd { margin-bottom: 10px; }
 }

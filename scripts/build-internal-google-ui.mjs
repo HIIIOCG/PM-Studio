@@ -9,15 +9,7 @@ function safeScript(source) { return source.replace(/<\/script/gi, '<\\/script')
 const internalCss = `
 .internal-access-note { margin: -10px 0 22px; color: #a6bfce; font-size: 12px; line-height: 1.7; }
 .project-name { font-size: 11px; color: #c5d6e2; font-weight: 500; }
-.pending-card .card-heading { flex-wrap: wrap; white-space: normal; }
 .pending-card .project-name { overflow-wrap: anywhere; }
-.pending-details { margin-top: 11px; padding: 6px 10px; font-size: 11px; }
-.project-details { width: min(660px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; }
-.project-details h2 { overflow-wrap: anywhere; line-height: 1.5; }
-.internal-project-fields { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 11px 14px; margin: 18px 0; font-size: 13px; line-height: 1.7; }
-.internal-project-fields dt { color: #a6bfce; }
-.internal-project-fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-@media (max-width: 700px) { .internal-project-fields { grid-template-columns: 1fr; gap: 2px; } .internal-project-fields dd { margin-bottom: 10px; } }
 `;
 
 export function combineInternalCode(publicCode, internalCode) {

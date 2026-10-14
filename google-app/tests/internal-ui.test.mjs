@@ -76,13 +76,13 @@ async function mount(html, data, { width = 900, failInitially = false } = {}) {
   return { document, get, calls, preferences, click(id) { return get(id).click(); }, fail(value) { fail = value; }, payload(value) { payload = value; }, resize(value) { width = value; onResize(); } };
 }
 
-test('internal contract keeps only explicit bounded text over the unchanged public schedule contract', () => {
+test('teamspace and public share the same explicit bounded detail contract', () => {
   const source = sample(), original = JSON.stringify(source);
   const result = normalizeInternalTimelinePayload(source);
   assert.equal(result.projects[0].name, '虛構專案 C-901');
   assert.equal(result.projects[0].notes, '虛構補充\n第二行');
   assert.equal(JSON.stringify(source), original);
-  assert.throws(() => normalizeTimelinePayload(source));
+  assert.deepEqual(normalizeTimelinePayload(source), result);
   for (const field of INTERNAL_PROJECT_FIELDS) {
     const missing = sample(); delete missing.projects[0][field]; assert.throws(() => normalizeInternalTimelinePayload(missing));
     for (const value of [null, {}, 1, 'x'.repeat(4001)]) { const bad = sample(); bad.projects[0][field] = value; assert.throws(() => normalizeInternalTimelinePayload(bad)); }
@@ -123,14 +123,17 @@ test('internal names appear on timeline and pending cards; details preserve all 
   const card = page.get('timeline-canvas').querySelectorAll('.project-card').find((node) => node.getAttribute('data-project-id') === source.projects[0].id);
   assert.match(card.textContent, /虛構 <img/);
   assert.match(card.getAttribute('aria-label'), /虛構 <img/);
+  assert.match(card.textContent, /TEST-01 · VTuber個人/);
   await card.click();
   assert.equal(page.get('project-details').open, true);
   for (const field of INTERNAL_PROJECT_FIELDS) assert.ok(page.get('project-details').textContent.includes(source.projects[0][field]), field);
+  assert.match(page.get('project-details').textContent, /客戶 TEST-01客戶類型VTuber個人客戶/);
   assert.equal(page.get('project-details').querySelectorAll('img').length, 0);
   assert.equal(page.get('project-details').querySelectorAll('script').length, 0);
   await page.click('close-project-details');
   const pending = page.get('pending-projects').querySelector('.pending-card');
   assert.match(pending.textContent, /虛構專案/);
+  assert.match(pending.textContent, /TEST-07 · 遊戲公司/);
   await pending.querySelector('button').click();
   assert.equal(page.get('project-details').open, true);
   assert.match(page.get('project-details').textContent, /虛構專案/);
@@ -153,8 +156,9 @@ test('internal language and navigation preserve the 84/42-day timeline and full 
   assert.equal(page.get('schedule-title').textContent, 'Team project schedule');
   assert.equal(page.get('internal-access-note').textContent, 'This schedule is read-only.');
   assert.match(page.get('timeline-canvas').textContent, /虛構專案/);
-  await page.get('timeline-canvas').querySelector('.project-card').click();
+  await page.get('timeline-canvas').querySelectorAll('.project-card').find((card) => card.getAttribute('data-project-id') === 'C-901').click();
   assert.match(page.get('project-details').textContent, /Client.*虛構客戶.*Current delivery goal.*虛構交付目標/);
+  assert.match(page.get('project-details').textContent, /Client TEST-01Client typeIndividual VTuber/);
   assert.equal(page.preferences.get('pm-studio-language'), 'en');
   assert.equal(page.calls.length, 1);
 });

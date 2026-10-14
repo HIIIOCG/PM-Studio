@@ -13,12 +13,12 @@ const INTERNAL_ERROR = '排程目前無法讀取，請稍後重試。';
 const PUBLIC_ERROR = '排程目前無法讀取，請稍後重試。';
 const header = ['案號', '目前交付目標', '專案／範圍', '客戶', '負責人', '狀態', '原始開始', '原始結束',
   '延長修正／補充', '交付步驟（參考）', '資料', '窗口', '執行者', '目前排程開始', '目前排程結束',
-  '修正開始', '修正結束', '客戶編號', '工作區 A 占用', '工作區 B 占用', '工作區 C 占用', '工作區 D 占用', '排程性質', '未結事項'];
+  '修正開始', '修正結束', '客戶編號', '客戶類型', '工作區 A 占用', '工作區 B 占用', '工作區 C 占用', '工作區 D 占用', '排程性質', '未結事項'];
 const defaults = {
   '案號': 'C-001', '目前交付目標': 'FictionalGoal', '專案／範圍': 'FictionalProject', '客戶': 'FictionalCustomer',
   '負責人': 'FictionalOwner', '執行者': 'FictionalExecutor', '窗口': 'FictionalContact',
   '資料': 'https://private.example/source', '交付步驟（參考）': 'FictionalDelivery',
-  '狀態': '製作中', '客戶編號': 'V-01', '原始開始': '2026-01-01', '原始結束': '2026-02-28',
+  '狀態': '製作中', '客戶編號': 'V-01', '客戶類型': 'VTuber公司', '原始開始': '2026-01-01', '原始結束': '2026-02-28',
   '目前排程開始': '2026-12-01', '目前排程結束': '2027-01-31', '工作區 A 占用': '1'
 };
 const privateKeys = ['name', 'customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps'];
@@ -127,7 +127,6 @@ test('internal data shares public date, correction, pending, reservation, follow
   for (const changes of scenarios) {
     const options = { rows: [row(changes)] };
     const internal = plain(setup(options).rpc('getTimeline'));
-    for (const project of internal.projects) for (const key of privateKeys) delete project[key];
     assert.deepEqual(internal, plain(setup(options, publicCode).rpc('getTimeline')));
   }
 });
@@ -217,9 +216,11 @@ test('the bundled RPC surface has only the internal read endpoints and no creden
   assert.doesNotMatch(adapterCode, /SpreadsheetApp|DriveApp|Session\.|LockService|CacheService|setValues|appendRow|batchUpdate|Values\.update|setProperty|UrlFetchApp|ScriptApp|Logger|console\./);
 });
 
-test('the original public backend still excludes every internal field and preserves its generic failures', () => {
+test('both latest backends expose identical authorized text fields and preserve source exclusions and generic failures', () => {
   const payload = plain(setup({}, publicCode).rpc('getTimeline'));
-  assert.ok(privateKeys.every(key => !Object.hasOwn(payload.projects[0], key)));
-  assert.doesNotMatch(JSON.stringify(payload), /FictionalProject|FictionalCustomer|FictionalGoal|FictionalOwner|FictionalContact|FictionalDelivery|FictionalExecutor|private\.example/);
+  assert.ok(privateKeys.every(key => Object.hasOwn(payload.projects[0], key)));
+  assert.deepEqual(payload, plain(setup().rpc('getTimeline')));
+  assert.equal(payload.projects[0].customerType, 'VTuber公司');
+  assert.doesNotMatch(JSON.stringify(payload), /private\.example|FICTIONAL_INTERNAL_SOURCE|sourceUrl|rawRow/);
   assert.throws(() => setup({ readError: 'PRIVATE_ERROR' }, publicCode).rpc('getTimeline'), { message: PUBLIC_ERROR });
 });

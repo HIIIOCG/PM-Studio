@@ -1,19 +1,13 @@
 /**
  * Teamspace read adapter for the same PM Studio schedule and Script project.
- * The bundle prepends the unchanged public schedule helpers, with its two entry
+ * The bundle prepends the shared schedule helpers, with its two entry
  * functions renamed to private helpers. Date/allocation rules have one source.
  * The teamspace deployment uses USER_DEPLOYING and ANYONE_ANONYMOUS, as authorized
- * by the user. The existing public deployment remains pinned to its public-only
- * version. Both variants are read-only and use the same current source.
+ * by the user. Both latest variants expose the authorized bounded details,
+ * remain read-only and use the same current source.
  */
 const PM_INTERNAL_ = Object.freeze({
-  error: '排程目前無法讀取，請稍後重試。',
-  textLimit: 4000,
-  fields: Object.freeze({
-    name: '專案／範圍', customer: '客戶', owner: '負責人', status: '狀態',
-    deliveryGoal: '目前交付目標', notes: '延長修正／補充', contact: '窗口',
-    assignee: '執行者', deliverySteps: '交付步驟（參考）'
-  })
+  error: '排程目前無法讀取，請稍後重試。'
 });
 
 function doGet(e) {
@@ -57,33 +51,7 @@ function getTimeline() {
 }
 
 function internalRows_(rows) {
-  // Validate IDs, headers, dates, pending reasons, reservations, follow-up and
-  // allocations with the exact same implementation used by the public app.
-  const result = publicRows_(rows);
-  const header = rows[0].map(text_);
-  const privateFields = new Map();
-  rows.slice(1).forEach(function(row) {
-    if (!Array.isArray(row)) return;
-    const id = text_(row[header.indexOf('案號')]);
-    if (!/^(?:C|BG|P|D|O)-\d{3,}$/u.test(id)) return;
-    const fields = {};
-    Object.keys(PM_INTERNAL_.fields).forEach(function(key) {
-      fields[key] = internalText_(row[header.indexOf(PM_INTERNAL_.fields[key])]);
-    });
-    privateFields.set(id, fields);
-  });
-  return {
-    projects: result.projects.map(function(project) {
-      // Only the validated base response and the explicit internal text
-      // allowlist are joined. Source rows, source links and settings stay server-side.
-      return Object.assign({}, project, privateFields.get(project.id));
-    }),
-    warnings: result.warnings
-  };
-}
-
-function internalText_(value) {
-  const bounded = text_(value).slice(0, PM_INTERNAL_.textLimit);
-  // Do not leave a split Unicode surrogate at the size boundary.
-  return bounded.replace(/[\uD800-\uDBFF]$/u, '');
+  // Main-entry and teamspace share one explicit detail allowlist, customer-type
+  // validation, date/allocation rules and source-link exclusions.
+  return publicRows_(rows);
 }

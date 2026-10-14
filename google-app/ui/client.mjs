@@ -8,7 +8,10 @@ function scheduleNode(tag, className, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
-function projectIdentity(project) { return project.customerCode ? scheduleText('customer', { code: project.customerCode }) : scheduleText('missingCustomer'); }
+function projectName(project) { return project.name || scheduleText('unnamed'); }
+function projectCustomerCode(project) { return project.customerCode ? scheduleText('customer', { code: project.customerCode }) : scheduleText('missingCustomer'); }
+function projectCustomerType(project) { return project.customerType ? scheduleText(project.customerType) : scheduleText('missingCustomerType'); }
+function projectIdentity(project) { return projectCustomerCode(project) + ' · ' + projectCustomerType(project); }
 function dateText(value) { return value ? value + (/^\d{4}-\d{2}$/.test(value) ? ' ' + scheduleText('monthPrecision') : '') : scheduleText('unspecified'); }
 function rangeText(start, end) { return dateText(start) + ' → ' + dateText(end); }
 function showScheduleDetails(block) {
@@ -19,7 +22,7 @@ function showScheduleDetails(block) {
     document.querySelector('main').append(scheduleDetailsDialog);
   }
   const project = block.project;
-  const heading = scheduleNode('h2', '', project.id);
+  const heading = scheduleNode('h2', '', project.id + ' · ' + projectName(project));
   heading.setAttribute('id', 'project-details-title');
   const close = scheduleNode('button', 'details-close', '×');
   close.setAttribute('id', 'close-project-details');
@@ -27,7 +30,13 @@ function showScheduleDetails(block) {
   close.setAttribute('aria-label', getScheduleLanguage() === 'en' ? 'Close project details' : '關閉專案資訊');
   close.addEventListener('click', () => scheduleDetailsDialog.close());
   const areas = project.workspaceIds.map((id) => id + ' × ' + project.workspaceUnits[id]).join(' · ');
-  scheduleDetailsDialog.replaceChildren(close, heading, scheduleNode('p', 'details-customer', projectIdentity(project)));
+  scheduleDetailsDialog.replaceChildren(close, heading, scheduleNode('p', 'details-customer', projectCustomerCode(project)));
+  const fields = scheduleNode('dl', 'project-fields');
+  fields.append(scheduleNode('dt', '', scheduleText('customerType')), scheduleNode('dd', '', projectCustomerType(project)));
+  for (const key of ['customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps']) {
+    fields.append(scheduleNode('dt', '', scheduleText(key === 'customer' ? 'clientName' : key)), scheduleNode('dd', '', project[key] || scheduleText('unspecified')));
+  }
+  scheduleDetailsDialog.append(fields);
   for (const phase of projectPhases(project)) scheduleDetailsDialog.append(scheduleNode('p', 'details-dates', scheduleText(phase.phase) + ' · ' + rangeText(phase.start, phase.end)));
   if (project.followUp.length) {
     const states = scheduleNode('div', 'details-statuses');
@@ -81,6 +90,11 @@ function renderSchedulePending() {
     card.append(title, scheduleNode('p', 'pending-reason', reasons.map((reason) => scheduleText(reason)).join(' · ')));
     card.append(scheduleNode('p', 'pending-dates', scheduleText(project.scheduleKind) + ' ' + rangeText(project.start, project.end)));
     if (project.correctionStart || project.correctionEnd || reasons.includes('correction-dates')) card.append(scheduleNode('p', 'pending-dates', scheduleText('correction') + ' ' + rangeText(project.correctionStart, project.correctionEnd)));
+    const details = scheduleNode('button', 'pending-details', scheduleText('details'));
+    details.setAttribute('type', 'button');
+    details.setAttribute('aria-label', scheduleText('details') + ' · ' + project.id + ' · ' + projectIdentity(project));
+    details.addEventListener('click', () => showScheduleDetails({ project, phase: 'pending' }));
+    card.append(details);
     target.append(card);
   }
 }

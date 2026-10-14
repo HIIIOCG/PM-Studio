@@ -226,6 +226,35 @@ test('single-day bars are native keyboard buttons with full details on activatio
   await page.click('close-project-details');
   assert.equal(page.get('project-details').open, false);
 });
+test('public details show authorized project text and client type after code as text on timeline and pending records', async(t) => {
+  const html = await fixture(t), value = sample();
+  const project = { ...value.projects[0], name: 'Fictional <img src=x onerror=alert(1)> project', notes: '<script>FICTIONAL_TEXT</script>\nSecond line',
+    start: value.today, end: value.today, correctionStart: '', correctionEnd: '', workspaceIds: ['A'], workspaceUnits: { A: 1 }, pendingReasons: [] };
+  value.projects = [project];
+  const page = await mount(html, value, { width: 212 });
+  const card = page.get('timeline-canvas').querySelector('.project-card');
+  assert.match(card.textContent, /C-901客戶 TEST-01 · VTuber個人/);
+  assert.doesNotMatch(card.textContent, /Fictional <img/);
+  await card.click();
+  const dialog = page.get('project-details');
+  assert.match(dialog.textContent, /客戶 TEST-01客戶類型VTuber個人客戶/);
+  for (const field of ['name', 'customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps']) assert.ok(dialog.textContent.includes(project[field]), field);
+  assert.equal(dialog.querySelectorAll('img,script').length, 0);
+  await page.click('close-project-details');
+  await page.click('language-toggle');
+  await page.get('timeline-canvas').querySelector('.project-card').click();
+  assert.match(dialog.textContent, /Client TEST-01Client typeIndividual VTuberClient/);
+  assert.match(dialog.textContent, /Owner.*Status.*Current delivery goal.*Revision \/ additional notes/);
+  const pendingValue = sample();
+  pendingValue.projects = [{ ...project, customerType: '', workspaceIds: [], workspaceUnits: {}, pendingReasons: ['no-workspace'] }];
+  const pendingPage = await mount(html, pendingValue);
+  const pending = pendingPage.get('pending-projects').querySelector('.pending-card');
+  assert.match(pending.textContent, /客戶 TEST-01 · 未填/);
+  await pending.querySelector('button').click();
+  assert.match(pendingPage.get('project-details').textContent, /客戶類型未填/);
+  assert.ok(pendingPage.get('project-details').textContent.includes(project.deliveryGoal));
+  assert.deepEqual(pendingPage.calls, [[]]);
+});
 test('known-month bars and reservations stay on the timeline with month labels in both languages', async(t) => {
   const value = sample();
   value.projects = [
@@ -308,11 +337,11 @@ test('initial service failure has no demo fallback; retry recovers and private e
 });
 test('malformed records fail closed while a valid empty schedule remains explicitly empty',async(t)=>{
   const html=await fixture(t);
-  const malformed=sample();malformed.projects[0].name='PRIVATE_NAME';
+  const malformed=sample();malformed.projects[0].sourceLinks='PRIVATE_SOURCE_LINK';
   const page=await mount(html,malformed);
   assert.equal(page.get('timeline-grid').hidden,true);
   assert.equal(page.get('retry').hidden,false);
-  assert.doesNotMatch(page.document.querySelector('main').textContent,/PRIVATE_NAME/);
+  assert.doesNotMatch(page.document.querySelector('main').textContent,/PRIVATE_SOURCE_LINK/);
   const empty=sample();empty.projects=[];
   const emptyPage=await mount(html,empty,{preferences:new Map([['pm-studio-language','en']])});
   assert.equal(emptyPage.get('timeline-grid').hidden,false);

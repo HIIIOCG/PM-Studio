@@ -2,6 +2,13 @@
 const PM_SCHEDULE_ = Object.freeze({
   tab: '專案列表',
   error: '排程目前無法讀取，請稍後重試。',
+  textLimit: 4000,
+  customerTypes: Object.freeze(['VTuber個人', 'VTuber公司', '遊戲公司', '其他']),
+  fields: Object.freeze({
+    name: '專案／範圍', customer: '客戶', owner: '負責人', status: '狀態',
+    deliveryGoal: '目前交付目標', notes: '延長修正／補充', contact: '窗口',
+    assignee: '執行者', deliverySteps: '交付步驟（參考）'
+  }),
   workspaces: [
     { id: 'A', name: '工作區 A', usualLoad: 2 },
     { id: 'B', name: '工作區 B', usualLoad: 2 },
@@ -70,6 +77,9 @@ function publicRows_(rows) {
     const rawCustomer = field('客戶編號');
     const customerCode = /^[A-Z]+-\d+$/u.test(rawCustomer) ? rawCustomer : '';
     if (!customerCode) pending.add('customer-code');
+    const rawCustomerType = field('客戶類型');
+    const customerType = PM_SCHEDULE_.customerTypes.includes(rawCustomerType) ? rawCustomerType : '';
+    if (rawCustomerType && !customerType) pending.add('customer-type');
 
     // These optional source columns allow an older sheet to remain readable while
     // it is upgraded. Public values are fixed enums, never free-form status text.
@@ -105,10 +115,14 @@ function publicRows_(rows) {
     });
     if (!workspaceIds.length) pending.add('no-workspace');
     // Construct the response field by field. Never spread a source row or private object.
-    projects.push({ id: id, customerCode: customerCode, start: start, end: end,
+    const project = { id: id, customerCode: customerCode, customerType: customerType, start: start, end: end,
       correctionStart: correctionStart, correctionEnd: correctionEnd,
       scheduleKind: scheduleKind, followUp: followUp,
-      workspaceIds: workspaceIds, workspaceUnits: workspaceUnits, pendingReasons: Array.from(pending) });
+      workspaceIds: workspaceIds, workspaceUnits: workspaceUnits, pendingReasons: Array.from(pending) };
+    Object.keys(PM_SCHEDULE_.fields).forEach(function(key) {
+      project[key] = detailText_(row[header.indexOf(PM_SCHEDULE_.fields[key])]);
+    });
+    projects.push(project);
   });
   return { projects: projects, warnings: Array.from(warnings) };
 }
@@ -167,3 +181,9 @@ function noParameters_(e) {
 }
 
 function text_(value) { return value == null ? '' : String(value).trim(); }
+
+function detailText_(value) {
+  const bounded = text_(value).slice(0, PM_SCHEDULE_.textLimit);
+  // Do not leave a split Unicode surrogate at the size boundary.
+  return bounded.replace(/[\uD800-\uDBFF]$/u, '');
+}

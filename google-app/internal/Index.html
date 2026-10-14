@@ -74,9 +74,12 @@ h1 { margin: 0; font-size: 29px; letter-spacing: .025em; font-weight: 650; }
 .follow-up-endpoint::before { content: ''; position: absolute; left: 15px; top: 15px; width: 14px; height: 14px; border: 2px solid #f1da9f; border-radius: 50%; background: #c9a75f; box-shadow: 0 0 0 4px #20262b; }
 .follow-up-endpoint:hover, .follow-up-endpoint:focus-visible { background: #d1b67622; }
 .follow-up-label { position: absolute; left: 39px; top: 14px; padding: 2px 5px; border-radius: 4px; background: #20262b; color: #ddc88f; white-space: nowrap; font-size: 11px; line-height: 1.3; }
-.project-details { width: min(400px, calc(100vw - 32px)); padding: 25px; border: 1px solid #60788a; border-radius: 14px; color: #e4edf4; background: #263540; box-shadow: 0 16px 50px #0008; }
+.project-details { width: min(660px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 25px; border: 1px solid #60788a; border-radius: 14px; color: #e4edf4; background: #263540; box-shadow: 0 16px 50px #0008; }
 .project-details::backdrop { background: #09121bbb; }
-.project-details h2 { font-size: 20px; color: #e4edf4; padding-right: 30px; }
+.project-details h2 { font-size: 20px; color: #e4edf4; padding-right: 30px; overflow-wrap: anywhere; line-height: 1.5; }
+.project-fields { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 11px 14px; margin: 18px 0; font-size: 13px; line-height: 1.7; }
+.project-fields dt { color: #a6bfce; }
+.project-fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .details-close { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; font-size: 21px; line-height: 1; }
 .details-customer { color: #a6bfce; font-size: 13px; margin: 8px 0 20px; }
 .details-dates { font-size: 13px; line-height: 1.8; font-variant-numeric: tabular-nums; }
@@ -97,6 +100,8 @@ h2 { margin: 0; font-size: 15px; font-weight: 600; color: #b7c7d3; }
 .count-badge { border: 1px solid var(--border); border-radius: 12px; padding: 1px 7px; font-size: 10px; color: #91a7b6; }
 .pending-projects { display: grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap: 10px; }
 .pending-card { border: 1px solid var(--border); background: #1c242b; padding: 14px 16px; border-radius: 10px; }
+.pending-card .card-heading { flex-wrap: wrap; white-space: normal; }
+.pending-details { margin-top: 11px; padding: 6px 10px; font-size: 11px; }
 .pending-reason { font-size: 11px; color: #b9a38a; margin: 8px 0 5px; line-height: 1.6; }
 .pending-dates { font-size: 10px; line-height: 1.8; color: #8fa6b6; margin: 0; font-variant-numeric: tabular-nums; }
 .page-footer { margin-top: 22px; color: #7d929f; font-size: 11px; line-height: 1.6; }
@@ -116,19 +121,13 @@ h2 { margin: 0; font-size: 15px; font-weight: 600; color: #b7c7d3; }
   .label-axis { padding: 25px 10px; font-size: 10px; }
   .timeline-footer { padding: 12px; line-height: 1.6; }
   .pending-projects { grid-template-columns: 1fr; }
+  .project-fields { grid-template-columns: 1fr; gap: 2px; }
+  .project-fields dd { margin-bottom: 10px; }
 }
 
 .internal-access-note { margin: -10px 0 22px; color: #a6bfce; font-size: 12px; line-height: 1.7; }
 .project-name { font-size: 11px; color: #c5d6e2; font-weight: 500; }
-.pending-card .card-heading { flex-wrap: wrap; white-space: normal; }
 .pending-card .project-name { overflow-wrap: anywhere; }
-.pending-details { margin-top: 11px; padding: 6px 10px; font-size: 11px; }
-.project-details { width: min(660px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; }
-.project-details h2 { overflow-wrap: anywhere; line-height: 1.5; }
-.internal-project-fields { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 11px 14px; margin: 18px 0; font-size: 13px; line-height: 1.7; }
-.internal-project-fields dt { color: #a6bfce; }
-.internal-project-fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-@media (max-width: 700px) { .internal-project-fields { grid-template-columns: 1fr; gap: 2px; } .internal-project-fields dd { margin-bottom: 10px; } }
 </style>
 </head>
 <body>
@@ -286,7 +285,9 @@ function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = 
   return { rows, height: top, width: days * dayWidth, firstDay, lastDay, dayWidth };
 }
 
-const PENDING_REASONS = Object.freeze(['no-workspace', 'workspace-values', 'production-dates', 'correction-dates', 'customer-code', 'schedule-kind', 'follow-up-values']);
+const PENDING_REASONS = Object.freeze(['no-workspace', 'workspace-values', 'production-dates', 'correction-dates', 'customer-code', 'customer-type', 'schedule-kind', 'follow-up-values']);
+const CUSTOMER_TYPES = Object.freeze(['VTuber個人', 'VTuber公司', '遊戲公司', '其他']);
+const PROJECT_DETAIL_FIELDS = Object.freeze(['name', 'customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps']);
 const SCHEDULE_WARNINGS = Object.freeze(['project-id-missing', 'project-id-invalid']);
 const SCHEDULE_KINDS = Object.freeze(['production', 'reservation']);
 const FOLLOW_UP_STATUSES = Object.freeze(['customer-confirmation', 'payment']);
@@ -312,10 +313,14 @@ function normalizeTimelinePayload(payload) {
   if (!Array.isArray(payload.projects) || payload.projects.length > 1000) throw new Error('Invalid projects.');
   const ids = new Set();
   const projects = payload.projects.map((project) => {
-    scheduleKeys(project, ['id', 'customerCode', 'start', 'end', 'correctionStart', 'correctionEnd', 'scheduleKind', 'followUp', 'workspaceIds', 'workspaceUnits', 'pendingReasons']);
+    scheduleKeys(project, ['id', 'customerCode', 'customerType', 'start', 'end', 'correctionStart', 'correctionEnd', 'scheduleKind', 'followUp', 'workspaceIds', 'workspaceUnits', 'pendingReasons', ...PROJECT_DETAIL_FIELDS]);
     if (typeof project.id !== 'string' || !/^(?:C|BG|P|D|O)-\d{3,}$/.test(project.id) || ids.has(project.id)) throw new Error('Invalid project ID.');
     ids.add(project.id);
     if (typeof project.customerCode !== 'string' || (project.customerCode !== '' && !/^[A-Z]+-\d+$/.test(project.customerCode))) throw new Error('Invalid customer code.');
+    if (typeof project.customerType !== 'string' || (project.customerType !== '' && !CUSTOMER_TYPES.includes(project.customerType))) throw new Error('Invalid customer type.');
+    for (const key of PROJECT_DETAIL_FIELDS) {
+      if (typeof project[key] !== 'string' || project[key].length > 4000) throw new Error('Invalid project text.');
+    }
     for (const key of ['start', 'end', 'correctionStart', 'correctionEnd']) scheduleDateValue(project[key]);
     if (!SCHEDULE_KINDS.includes(project.scheduleKind)) throw new Error('Invalid schedule kind.');
     if (!Array.isArray(project.followUp) || project.followUp.length > FOLLOW_UP_STATUSES.length
@@ -365,6 +370,22 @@ const SCHEDULE_TEXT = {
   footer: ['空白時段不代表可預約，檔期須由團隊確認。', 'Empty time spans do not confirm availability. Please contact the team.'],
   timeline: ['排程時間軸，可左右捲動', 'Schedule timeline; scroll horizontally to explore dates'],
   customer: ['客戶 {code}', 'Client {code}'],
+  customerType: ['客戶類型', 'Client type'],
+  missingCustomerType: ['未填', 'Not provided'],
+  'VTuber個人': ['VTuber個人', 'Individual VTuber'],
+  'VTuber公司': ['VTuber公司', 'VTuber company'],
+  '遊戲公司': ['遊戲公司', 'Game company'],
+  '其他': ['其他', 'Other'],
+  unnamed: ['專案名稱未填', 'Project name not provided'],
+  details: ['查看專案資訊', 'View project details'],
+  clientName: ['客戶', 'Client'],
+  owner: ['負責人', 'Owner'],
+  status: ['狀態', 'Status'],
+  deliveryGoal: ['目前交付目標', 'Current delivery goal'],
+  notes: ['延長修正／補充', 'Revision / additional notes'],
+  contact: ['窗口', 'Contact'],
+  assignee: ['執行者', 'Assignee'],
+  deliverySteps: ['交付步驟（參考）', 'Delivery steps (reference)'],
   missingCustomer: ['客戶編號待確認', 'Client code pending'],
   unspecified: ['未定', 'Pending'],
   noWork: ['此區間未排工作', 'No work in this period'],
@@ -374,6 +395,7 @@ const SCHEDULE_TEXT = {
   'production-dates': ['製作日期待確認', 'Production dates need confirmation'],
   'correction-dates': ['修正日期待確認', 'Revision dates need confirmation'],
   'customer-code': ['客戶編號待確認', 'Client code needs confirmation'],
+  'customer-type': ['客戶類型待確認', 'Client type needs confirmation'],
   'schedule-kind': ['排程性質待確認', 'Schedule type needs confirmation'],
   'follow-up-values': ['未結事項待確認', 'Follow-up details need confirmation'],
 };
@@ -396,38 +418,21 @@ function scheduleReadTime(value) {
 }
 
 
-const INTERNAL_PROJECT_FIELDS = Object.freeze(['name', 'customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps']);
+const INTERNAL_PROJECT_FIELDS = PROJECT_DETAIL_FIELDS;
 
-// The authenticated service adds only these explicit text fields to the public
-// schedule contract. Source links, settings and original rows are never accepted.
+// Both authorized reading views share the same bounded text contract.
+// Source links, settings and original rows are never accepted.
 function normalizeInternalTimelinePayload(payload) {
-  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.projects)) throw new Error('Invalid internal schedule.');
-  const extras = payload.projects.map((project) => {
-    if (!project || typeof project !== 'object' || Array.isArray(project)) throw new Error('Invalid internal project.');
-    const fields = {};
-    for (const key of INTERNAL_PROJECT_FIELDS) {
-      if (!Object.hasOwn(project, key) || typeof project[key] !== 'string' || project[key].length > 4000) throw new Error('Invalid internal project text.');
-      fields[key] = project[key];
-    }
-    return fields;
-  });
-  const publicProjects = payload.projects.map((project) => Object.fromEntries(Object.entries(project).filter(([key]) => !INTERNAL_PROJECT_FIELDS.includes(key))));
-  const schedule = normalizeTimelinePayload({ ...payload, projects: publicProjects });
-  return { ...schedule, projects: schedule.projects.map((project, index) => ({ ...project, ...extras[index] })) };
+  return normalizeTimelinePayload(payload);
 }
 
 
 const INTERNAL_TEXT = Object.freeze({
   title: ['團隊專案排程', 'Team project schedule'],
   access: ['排程畫面為唯讀。', 'This schedule is read-only.'],
-  unnamed: ['專案名稱未填', 'Project name not provided'],
-  details: ['查看專案資訊', 'View project details'],
-  customer: ['客戶', 'Client'], owner: ['負責人', 'Owner'], status: ['狀態', 'Status'],
-  deliveryGoal: ['目前交付目標', 'Current delivery goal'], notes: ['延長修正／補充', 'Revision / additional notes'],
-  contact: ['窗口', 'Contact'], assignee: ['執行者', 'Assignee'], deliverySteps: ['交付步驟（參考）', 'Delivery steps (reference)'],
 });
 function internalText(key) { return INTERNAL_TEXT[key]?.[getScheduleLanguage() === 'en' ? 1 : 0] || key; }
-function projectName(project) { return project.name || internalText('unnamed'); }
+function projectName(project) { return project.name || scheduleText('unnamed'); }
 function fullProjectIdentity(project) { return project.id + ' · ' + projectName(project) + ' · ' + projectIdentity(project); }
 const scheduleElement = (id) => document.getElementById(id);
 const scheduleState = { payload: null, firstDay: null, today: null, loading: false, failed: false, layout: null, scale: null, viewPosition: null };
@@ -439,7 +444,9 @@ function scheduleNode(tag, className, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
-function projectIdentity(project) { return project.customerCode ? scheduleText('customer', { code: project.customerCode }) : scheduleText('missingCustomer'); }
+function projectCustomerCode(project) { return project.customerCode ? scheduleText('customer', { code: project.customerCode }) : scheduleText('missingCustomer'); }
+function projectCustomerType(project) { return project.customerType ? scheduleText(project.customerType) : scheduleText('missingCustomerType'); }
+function projectIdentity(project) { return projectCustomerCode(project) + ' · ' + projectCustomerType(project); }
 function dateText(value) { return value ? value + (/^\d{4}-\d{2}$/.test(value) ? ' ' + scheduleText('monthPrecision') : '') : scheduleText('unspecified'); }
 function rangeText(start, end) { return dateText(start) + ' → ' + dateText(end); }
 function showScheduleDetails(block) {
@@ -458,10 +465,11 @@ function showScheduleDetails(block) {
   close.setAttribute('aria-label', getScheduleLanguage() === 'en' ? 'Close project details' : '關閉專案資訊');
   close.addEventListener('click', () => scheduleDetailsDialog.close());
   const areas = project.workspaceIds.map((id) => id + ' × ' + project.workspaceUnits[id]).join(' · ');
-  scheduleDetailsDialog.replaceChildren(close, heading, scheduleNode('p', 'details-customer', projectIdentity(project)));
-  const fields = scheduleNode('dl', 'internal-project-fields');
+  scheduleDetailsDialog.replaceChildren(close, heading, scheduleNode('p', 'details-customer', projectCustomerCode(project)));
+  const fields = scheduleNode('dl', 'project-fields');
+  fields.append(scheduleNode('dt', '', scheduleText('customerType')), scheduleNode('dd', '', projectCustomerType(project)));
   for (const key of ['customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps']) {
-    fields.append(scheduleNode('dt', '', internalText(key)), scheduleNode('dd', '', project[key] || scheduleText('unspecified')));
+    fields.append(scheduleNode('dt', '', scheduleText(key === 'customer' ? 'clientName' : key)), scheduleNode('dd', '', project[key] || scheduleText('unspecified')));
   }
   scheduleDetailsDialog.append(fields);
   for (const phase of projectPhases(project)) scheduleDetailsDialog.append(scheduleNode('p', 'details-dates', scheduleText(phase.phase) + ' · ' + rangeText(phase.start, phase.end)));
@@ -516,12 +524,12 @@ function renderSchedulePending() {
     const card = scheduleNode('article', 'pending-card');
     const title = scheduleNode('div', 'card-heading');
     title.append(scheduleNode('span', 'card-id', project.id), scheduleNode('span', 'project-name', projectName(project)));
-    card.append(title, scheduleNode('p', 'pending-reason', reasons.map((reason) => scheduleText(reason)).join(' · ')));
+    card.append(title, scheduleNode('p', 'customer-code', projectIdentity(project)), scheduleNode('p', 'pending-reason', reasons.map((reason) => scheduleText(reason)).join(' · ')));
     card.append(scheduleNode('p', 'pending-dates', scheduleText(project.scheduleKind) + ' ' + rangeText(project.start, project.end)));
     if (project.correctionStart || project.correctionEnd || reasons.includes('correction-dates')) card.append(scheduleNode('p', 'pending-dates', scheduleText('correction') + ' ' + rangeText(project.correctionStart, project.correctionEnd)));
-    const details = scheduleNode('button', 'pending-details', internalText('details'));
+    const details = scheduleNode('button', 'pending-details', scheduleText('details'));
     details.setAttribute('type', 'button');
-    details.setAttribute('aria-label', internalText('details') + ' · ' + fullProjectIdentity(project));
+    details.setAttribute('aria-label', scheduleText('details') + ' · ' + fullProjectIdentity(project));
     details.addEventListener('click', () => showScheduleDetails({ project, phase: 'pending' }));
     card.append(details);
     target.append(card);
@@ -598,7 +606,7 @@ function renderScheduleTimeline(preserveScroll = false) {
       card.setAttribute('aria-label', details); card.setAttribute('title', details);
       const heading = scheduleNode('div', 'card-heading'); heading.append(scheduleNode('span', 'card-id', project.id), scheduleNode('span', 'project-name', projectName(project)));
       const content = scheduleNode('span', 'card-content');
-      content.append(heading, scheduleNode('span', 'card-dates', rangeText(block.start, block.end)), scheduleNode('span', 'card-meta', scheduleText(block.phase) + ' · ' + project.workspaceIds.join(' + ') + ' · ' + String(project.workspaceUnits[row.workspace.id])));
+      content.append(heading, scheduleNode('span', 'card-dates', rangeText(block.start, block.end)), scheduleNode('span', 'card-meta', projectIdentity(project) + ' · ' + scheduleText(block.phase) + ' · ' + project.workspaceIds.join(' + ') + ' · ' + String(project.workspaceUnits[row.workspace.id])));
       card.append(content);
       card.addEventListener('click', () => showScheduleDetails(block));
       canvas.append(card);
