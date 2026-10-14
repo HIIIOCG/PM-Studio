@@ -1,13 +1,13 @@
 /**
- * Signed-in read adapter for the same PM Studio schedule and Script project.
+ * Teamspace read adapter for the same PM Studio schedule and Script project.
  * The bundle prepends the unchanged public schedule helpers, with its two entry
  * functions renamed to private helpers. Date/allocation rules have one source.
- * The internal deployment uses USER_ACCESSING. The existing public deployment
- * remains pinned to its verified public version. Google performs internal Sheets
- * reads with the accessing user's own existing sharing permissions.
+ * The teamspace deployment uses USER_DEPLOYING and ANYONE_ANONYMOUS, as authorized
+ * by the user. The existing public deployment remains pinned to its public-only
+ * version. Both variants are read-only and use the same current source.
  */
 const PM_INTERNAL_ = Object.freeze({
-  error: '無法讀取內部排程，請確認登入帳號具有專案列表存取權限。',
+  error: '排程目前無法讀取，請稍後重試。',
   textLimit: 4000,
   fields: Object.freeze({
     name: '專案／範圍', customer: '客戶', owner: '負責人', status: '狀態',
@@ -20,10 +20,9 @@ function doGet(e) {
   try {
     if (arguments.length > 1) throw new Error('request');
     noParameters_(e);
-    // Keep Google's default frame protection. The Pages /internal/ entry opens
-    // this signed-in app at the top level instead of embedding it.
-    return HtmlService.createHtmlOutputFromFile('Index').setTitle('PM Studio 內部排程')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    return HtmlService.createHtmlOutputFromFile('Index').setTitle('PM Studio 團隊專案排程')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   } catch (error) { throw new Error(PM_INTERNAL_.error); }
 }
 
@@ -34,8 +33,8 @@ function getTimeline() {
     if (Object.keys(properties).length !== 1 || !Object.prototype.hasOwnProperty.call(properties, 'SOURCE_SHEET_ID')) throw new Error('configuration');
     const sourceId = text_(properties.SOURCE_SHEET_ID);
     if (!/^[A-Za-z0-9_-]{8,}$/u.test(sourceId)) throw new Error('configuration');
-    // Advanced Sheets inherits USER_ACCESSING. No deployer credential, cache,
-    // or public snapshot is used as a fallback when this user cannot read.
+    // The read-only deployment reads the latest source with deployer permission.
+    // Source credentials, IDs and original rows are never returned to the browser.
     const response = Sheets.Spreadsheets.Values.get(sourceId, "'" + PM_SCHEDULE_.tab + "'", {
       majorDimension: 'ROWS', valueRenderOption: 'FORMATTED_VALUE'
     });

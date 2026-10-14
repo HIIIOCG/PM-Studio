@@ -1,8 +1,8 @@
 import { normalizeInternalTimelinePayload } from './internal-contract.mjs';
 
 const INTERNAL_TEXT = Object.freeze({
-  title: ['內部專案排程', 'Internal project schedule'],
-  access: ['依 Google「專案列表」的存取權限讀取，排程畫面為唯讀。', 'Access follows your Google Project List permissions. This schedule is read-only.'],
+  title: ['團隊專案排程', 'Team project schedule'],
+  access: ['排程畫面為唯讀。', 'This schedule is read-only.'],
   unnamed: ['專案名稱未填', 'Project name not provided'],
   details: ['查看專案資訊', 'View project details'],
   customer: ['客戶', 'Client'], owner: ['負責人', 'Owner'], status: ['狀態', 'Status'],

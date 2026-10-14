@@ -23,13 +23,13 @@ const internalCss = `
 export function combineInternalCode(publicCode, internalCode) {
   if ((publicCode.match(/^function doGet\(/gm) || []).length !== 1 || (publicCode.match(/^function getTimeline\(/gm) || []).length !== 1) throw new Error('Unexpected shared schedule source.');
   const helpers = publicCode.replace(/^function doGet\(/m, 'function publicDoGet_(').replace(/^function getTimeline\(/m, 'function publicGetTimeline_(');
-  return '// Generated signed-in reading variant for the existing PM Studio Script project. No project records are embedded.\n' + helpers + '\n\n' + internalCode;
+  return '// Generated teamspace reading variant for the existing PM Studio Script project. No project records are embedded.\n' + helpers + '\n\n' + internalCode;
 }
 
 function verifyInternalManifest(source) {
   const manifest = JSON.parse(source);
-  if (manifest.webapp?.executeAs !== 'USER_ACCESSING' || manifest.webapp?.access !== 'ANYONE'
-    || manifest.oauthScopes?.length !== 1 || manifest.oauthScopes[0] !== 'https://www.googleapis.com/auth/spreadsheets.readonly') throw new Error('Internal reading must use visitor permissions and read-only access.');
+  if (manifest.webapp?.executeAs !== 'USER_DEPLOYING' || manifest.webapp?.access !== 'ANYONE_ANONYMOUS'
+    || manifest.oauthScopes?.length !== 1 || manifest.oauthScopes[0] !== 'https://www.googleapis.com/auth/spreadsheets.readonly') throw new Error('Teamspace reading must use anonymous read-only access.');
   return manifest;
 }
 
@@ -40,9 +40,9 @@ export async function buildInternalGoogleUi({ outputDir = resolve(root, 'google-
     read('web/dist/localization.mjs'), read('google-app/internal/ui/internal-contract.mjs'), read('google-app/internal/ui/client.mjs'),
   ]);
   const script = '// Generated from PM Studio sources. No project records are embedded.\n(async () => {\n' + modules.map(browserSource).join('\n') + '\n})();';
-  const template = html.replace('<title>PM Studio｜專案排程</title>', '<title>PM Studio｜內部專案排程</title>')
-    .replace('<h1 id="schedule-title">專案排程</h1>', '<h1 id="schedule-title">內部專案排程</h1>')
-    .replace('<p id="preview-note"', '<p id="internal-access-note" class="internal-access-note">依 Google「專案列表」的存取權限讀取，排程畫面為唯讀。</p>\n    <p id="preview-note"')
+  const template = html.replace('<title>PM Studio｜專案排程</title>', '<title>PM Studio｜團隊專案排程</title>')
+    .replace('<h1 id="schedule-title">專案排程</h1>', '<h1 id="schedule-title">團隊專案排程</h1>')
+    .replace('<p id="preview-note"', '<p id="internal-access-note" class="internal-access-note">排程畫面為唯讀。</p>\n    <p id="preview-note"')
     .replace('<link rel="stylesheet" href="/styles.css">', () => '<style>\n' + css + internalCss + '</style>')
     .replace('<script type="module" src="/app.mjs"></script>', () => '<script>\n' + safeScript(script) + '\n</script>');
   await mkdir(outputDir, { recursive: true });
@@ -60,5 +60,5 @@ export async function buildInternalGoogleUi({ outputDir = resolve(root, 'google-
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await buildInternalGoogleUi();
-  console.log('Signed-in schedule reading built for the existing Script project; package: local/google-app-bundle/internal-readonly/.');
+  console.log('Teamspace schedule reading built for the existing Script project; package: local/google-app-bundle/internal-readonly/.');
 }

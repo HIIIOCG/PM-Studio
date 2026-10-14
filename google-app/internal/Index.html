@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>PM Studio｜內部專案排程</title>
+  <title>PM Studio｜團隊專案排程</title>
   <style>
 :root {
   font-family: "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
@@ -134,10 +134,10 @@ h2 { margin: 0; font-size: 15px; font-weight: 600; color: #b7c7d3; }
 <body>
   <main class="app">
     <header class="app-header">
-      <div><p class="brand">PM STUDIO <span>／ PRODUCTION SCHEDULE</span></p><h1 id="schedule-title">內部專案排程</h1></div>
+      <div><p class="brand">PM STUDIO <span>／ PRODUCTION SCHEDULE</span></p><h1 id="schedule-title">團隊專案排程</h1></div>
       <button id="language-toggle" class="language-button" lang="en" aria-label="Switch to English">English</button>
     </header>
-    <p id="internal-access-note" class="internal-access-note">依 Google「專案列表」的存取權限讀取，排程畫面為唯讀。</p>
+    <p id="internal-access-note" class="internal-access-note">排程畫面為唯讀。</p>
     <p id="preview-note" class="preview-note" hidden>示意預覽 · 所有資料皆為虛構</p>
     <section class="schedule" aria-labelledby="schedule-title">
       <div class="toolbar">
@@ -418,8 +418,8 @@ function normalizeInternalTimelinePayload(payload) {
 
 
 const INTERNAL_TEXT = Object.freeze({
-  title: ['內部專案排程', 'Internal project schedule'],
-  access: ['依 Google「專案列表」的存取權限讀取，排程畫面為唯讀。', 'Access follows your Google Project List permissions. This schedule is read-only.'],
+  title: ['團隊專案排程', 'Team project schedule'],
+  access: ['排程畫面為唯讀。', 'This schedule is read-only.'],
   unnamed: ['專案名稱未填', 'Project name not provided'],
   details: ['查看專案資訊', 'View project details'],
   customer: ['客戶', 'Client'], owner: ['負責人', 'Owner'], status: ['狀態', 'Status'],

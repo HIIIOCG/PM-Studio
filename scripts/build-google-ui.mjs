@@ -35,6 +35,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const view = process.argv.includes('--internal') ? 'internal' : 'public';
   await buildGoogleUi({ view });
   console.log(view === 'internal'
-    ? 'Signed-in schedule reading built for the existing Script project; package: local/google-app-bundle/internal-readonly/.'
+    ? 'Teamspace schedule reading built for the existing Script project; package: local/google-app-bundle/internal-readonly/.'
     : 'Single Google UI built: Index.html; package: local/google-app-bundle/single/.');
 }

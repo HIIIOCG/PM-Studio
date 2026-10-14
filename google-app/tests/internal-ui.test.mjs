@@ -94,20 +94,21 @@ test('internal contract keeps only explicit bounded text over the unchanged publ
   const duplicate = sample(); duplicate.projects.push(duplicate.projects[0]); assert.throws(() => normalizeInternalTimelinePayload(duplicate));
 });
 
-test('same schedule builder creates a signed-in reading bundle for the existing Script project', async (t) => {
+test('same schedule builder creates an anonymous teamspace reading bundle for the existing Script project', async (t) => {
   const { html, directory } = await fixture(t, true);
   for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Script(match[1]);
   const bundle = resolve(directory, 'bundle/internal-readonly');
   assert.deepEqual((await readdir(bundle)).sort(), ['Code.gs', 'Index.html', 'appsscript.json']);
   const manifest = JSON.parse(await readFile(resolve(bundle, 'appsscript.json'), 'utf8'));
-  assert.equal(manifest.webapp.executeAs, 'USER_ACCESSING');
-  assert.equal(manifest.webapp.access, 'ANYONE');
+  assert.equal(manifest.webapp.executeAs, 'USER_DEPLOYING');
+  assert.equal(manifest.webapp.access, 'ANYONE_ANONYMOUS');
   assert.deepEqual(manifest.oauthScopes, ['https://www.googleapis.com/auth/spreadsheets.readonly']);
   const code = await readFile(resolve(bundle, 'Code.gs'), 'utf8');
   assert.deepEqual([...code.matchAll(/^function (\w+)\(/gm)].map((match) => match[1]).filter((name) => !name.endsWith('_')).sort(), ['doGet', 'getTimeline']);
   new Script(code);
   assert.match(code, /existing PM Studio Script project/);
-  assert.match(html, /內部專案排程/);
+  assert.match(html, /團隊專案排程/);
+  assert.doesNotMatch(html, /登入|存取權限|Google Project List permissions|sign-in|USER_ACCESSING/);
   assert.doesNotMatch(html, /虛構專案|C-901|TEST-01|PRIVATE_SOURCE_IDENTIFIER|https:\/\/docs\.google|<script[^>]+src=|saveLayout|publishApprovedSnapshot|assignment-form|id="search"/);
   assert.doesNotMatch(html, /innerHTML|insertAdjacentHTML/);
 });
@@ -117,8 +118,8 @@ test('internal names appear on timeline and pending cards; details preserve all 
   source.projects[0].name = '虛構 <img src=x onerror=alert(1)> 專案';
   source.projects[0].notes = '<script>PRIVATE_INJECTED_SCRIPT</script>\n保留原文';
   const page = await mount((await fixture(t)).html, source);
-  assert.equal(page.document.title, 'PM Studio｜內部專案排程');
-  assert.match(page.get('internal-access-note').textContent, /Google.*存取權限.*唯讀/);
+  assert.equal(page.document.title, 'PM Studio｜團隊專案排程');
+  assert.equal(page.get('internal-access-note').textContent, '排程畫面為唯讀。');
   const card = page.get('timeline-canvas').querySelectorAll('.project-card').find((node) => node.getAttribute('data-project-id') === source.projects[0].id);
   assert.match(card.textContent, /虛構 <img/);
   assert.match(card.getAttribute('aria-label'), /虛構 <img/);
@@ -149,8 +150,8 @@ test('internal language and navigation preserve the 84/42-day timeline and full 
   assert.equal(page.get('date-range').textContent, '2026-12-17 — 2027-01-27');
   await page.click('next'); assert.equal(page.get('date-range').textContent, '2027-01-21 — 2027-03-03');
   await page.click('today-button'); await page.click('language-toggle');
-  assert.equal(page.get('schedule-title').textContent, 'Internal project schedule');
-  assert.match(page.get('internal-access-note').textContent, /Google Project List permissions.*read-only/);
+  assert.equal(page.get('schedule-title').textContent, 'Team project schedule');
+  assert.equal(page.get('internal-access-note').textContent, 'This schedule is read-only.');
   assert.match(page.get('timeline-canvas').textContent, /虛構專案/);
   await page.get('timeline-canvas').querySelector('.project-card').click();
   assert.match(page.get('project-details').textContent, /Client.*虛構客戶.*Current delivery goal.*虛構交付目標/);
@@ -177,7 +178,7 @@ test('internal month reservations and offscreen follow-up retain their schedule 
   assert.match(page.get('project-details').textContent, /等待事項不延長製作期間/);
 });
 
-test('internal unauthorized reads and malformed payloads fail closed without fabricated data or private errors', async (t) => {
+test('teamspace source failures and malformed payloads show no fabricated data or private errors', async (t) => {
   const html = (await fixture(t)).html;
   const page = await mount(html, sample(), { failInitially: true });
   assert.equal(page.get('timeline-grid').hidden, true);

@@ -22,8 +22,8 @@ export function validateAppUrl(value) {
   return validateExecutionUrl(value, 'PM_STUDIO_APP_URL');
 }
 
-export function validateInternalAppUrl(value) {
-  return validateExecutionUrl(value, 'PM_STUDIO_INTERNAL_APP_URL');
+export function validateTeamspaceAppUrl(value) {
+  return validateExecutionUrl(value, 'PM_STUDIO_TEAMSPACE_APP_URL');
 }
 
 export function renderPublicEntry(appUrl) {
@@ -49,8 +49,8 @@ export function renderPublicEntry(appUrl) {
 `;
 }
 
-export function renderInternalEntry(appUrl) {
-  const url = validateInternalAppUrl(appUrl);
+export function renderTeamspaceEntry(appUrl) {
+  const url = validateTeamspaceAppUrl(appUrl);
   return `<!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -58,16 +58,16 @@ export function renderInternalEntry(appUrl) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
-<meta http-equiv="refresh" content="0;url=${url}">
-<title>PM Studio 內部排程</title>
+<title>PM Studio 團隊排程</title>
 <style>
-:root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#111518;color:#e8ecef}body{max-width:36rem;margin:15vh auto;padding:24px;line-height:1.6}a{display:inline-block;padding:10px 16px;border:1px solid #647078;border-radius:6px;color:#dce6ec;text-decoration:none}a:focus-visible{outline:3px solid #88cced;outline-offset:3px}
+:root{color-scheme:light dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#111518;color:#e8ecef}
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0}iframe{position:fixed;inset:0;width:100%;height:100%;height:100dvh;border:0;background:#111518}
+.open-schedule{position:fixed;right:8px;bottom:8px;padding:5px 9px;border:1px solid #647078;border-radius:6px;background:#192126;color:#dce6ec;font-size:11px;text-decoration:none;opacity:.86}.open-schedule:focus-visible{outline:3px solid #88cced;outline-offset:2px}
 </style>
 </head>
 <body>
-<h1>PM Studio 內部排程</h1>
-<p>正在開啟內部排程。請使用有主表存取權限的 Google 帳號登入。</p>
-<a href="${url}" rel="noreferrer">開啟內部排程</a>
+<iframe id="schedule" src="${url}" title="PM Studio 團隊排程" referrerpolicy="no-referrer"></iframe>
+<a class="open-schedule" href="${url}" target="_blank" rel="noopener noreferrer" aria-label="在新分頁開啟團隊排程">另開團隊排程 ↗</a>
 </body>
 </html>
 `;
@@ -103,7 +103,7 @@ async function workspaceTarget(outputDir, workspace) {
   return target;
 }
 
-async function validateOutputDirectory(outputDir, workspace, complete = false, includeInternal = false) {
+async function validateOutputDirectory(outputDir, workspace, complete = false, includeTeamspace = false) {
   requireContainedPath(workspace, outputDir);
   let info;
   try { info = await lstat(outputDir); }
@@ -113,11 +113,11 @@ async function validateOutputDirectory(outputDir, workspace, complete = false, i
   // Refuse unknown files instead of accidentally packaging an internal deployment.
   const entries = await readdir(outputDir, { withFileTypes: true });
   const permitted = complete
-    ? ['index.html', '.nojekyll', ...(includeInternal ? ['internal'] : [])]
-    : ['index.html', 'data', '.nojekyll', 'internal'];
+    ? ['index.html', '.nojekyll', ...(includeTeamspace ? ['teamspace'] : [])]
+    : ['index.html', 'data', '.nojekyll', 'teamspace', 'internal'];
   if (entries.some((entry) => !permitted.includes(entry.name)
-    || (['data', 'internal'].includes(entry.name) ? !entry.isDirectory() : !entry.isFile()))
-    || (complete && entries.length !== 2 + Number(includeInternal))) {
+    || (['data', 'teamspace', 'internal'].includes(entry.name) ? !entry.isDirectory() : !entry.isFile()))
+    || (complete && entries.length !== 2 + Number(includeTeamspace))) {
     throw new Error('輸出資料夾含有未允許的檔案，請選擇獨立的公開網站資料夾。');
   }
   const dataPath = resolve(outputDir, 'data');
@@ -128,17 +128,20 @@ async function validateOutputDirectory(outputDir, workspace, complete = false, i
       throw new Error('公開資料資料夾含有未允許的檔案。');
     }
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  if (entries.some((entry) => entry.name === 'internal')) {
-    const internalPath = resolve(outputDir, 'internal');
-    const internalInfo = await lstat(internalPath);
-    if (internalInfo.isSymbolicLink() || !internalInfo.isDirectory()) throw new Error('內部入口不能使用符號連結或非資料夾。');
-    requireContainedPath(workspace, await realpath(internalPath));
-    const internalEntries = await readdir(internalPath, { withFileTypes: true });
-    if (internalEntries.length !== 1 || internalEntries[0].name !== 'index.html' || !internalEntries[0].isFile()) {
-      throw new Error('內部入口資料夾含有未允許的檔案。');
+  // Accept the exact old entry only while validating an existing output, so
+  // migration can replace it atomically without publishing an old route alias.
+  for (const entryName of ['teamspace', 'internal']) {
+    if (!entries.some((entry) => entry.name === entryName)) continue;
+    const entryPath = resolve(outputDir, entryName);
+    const entryInfo = await lstat(entryPath);
+    if (entryInfo.isSymbolicLink() || !entryInfo.isDirectory()) throw new Error('團隊入口不能使用符號連結或非資料夾。');
+    requireContainedPath(workspace, await realpath(entryPath));
+    const entryFiles = await readdir(entryPath, { withFileTypes: true });
+    if (entryFiles.length !== 1 || entryFiles[0].name !== 'index.html' || !entryFiles[0].isFile()) {
+      throw new Error('團隊入口資料夾含有未允許的檔案。');
     }
   }
-  return { exists: true, legacy: entries.some((entry) => entry.name === 'data') };
+  return { exists: true, legacy: entries.some((entry) => ['data', 'internal'].includes(entry.name)) };
 }
 
 async function removeOwnedDirectory(directory, workspace) {
@@ -156,15 +159,15 @@ async function removeOwnedDirectory(directory, workspace) {
 
 export async function buildPublicSite({
   appUrl = process.env.PM_STUDIO_APP_URL,
-  internalAppUrl = process.env.PM_STUDIO_INTERNAL_APP_URL,
+  teamspaceAppUrl = process.env.PM_STUDIO_TEAMSPACE_APP_URL,
   outputDir = resolve(root, 'local/public-site'),
   renderEntry = renderPublicEntry,
-  renderInternal = renderInternalEntry,
+  renderTeamspace = renderTeamspaceEntry,
   installDirectory = rename,
 } = {}) {
   const verifiedUrl = validateAppUrl(appUrl);
-  const verifiedInternalUrl = internalAppUrl === undefined || internalAppUrl === ''
-    ? undefined : validateInternalAppUrl(internalAppUrl);
+  const verifiedTeamspaceUrl = teamspaceAppUrl === undefined || teamspaceAppUrl === ''
+    ? undefined : validateTeamspaceAppUrl(teamspaceAppUrl);
   const workspace = await realpath(root);
   const target = await workspaceTarget(resolve(outputDir), workspace);
   await validateOutputDirectory(target, workspace);
@@ -175,11 +178,11 @@ export async function buildPublicSite({
     requireContainedPath(workspace, await realpath(staging));
     await writeFile(resolve(staging, 'index.html'), await renderEntry(verifiedUrl), { flag: 'wx' });
     await writeFile(resolve(staging, '.nojekyll'), '', { flag: 'wx' });
-    if (verifiedInternalUrl) {
-      await mkdir(resolve(staging, 'internal'));
-      await writeFile(resolve(staging, 'internal/index.html'), await renderInternal(verifiedInternalUrl), { flag: 'wx' });
+    if (verifiedTeamspaceUrl) {
+      await mkdir(resolve(staging, 'teamspace'));
+      await writeFile(resolve(staging, 'teamspace/index.html'), await renderTeamspace(verifiedTeamspaceUrl), { flag: 'wx' });
     }
-    await validateOutputDirectory(staging, workspace, true, Boolean(verifiedInternalUrl));
+    await validateOutputDirectory(staging, workspace, true, Boolean(verifiedTeamspaceUrl));
     // Validate again immediately before replacing a previously clean publication.
     const previous = await validateOutputDirectory(target, workspace);
     if (previous.exists) {

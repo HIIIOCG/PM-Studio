@@ -9,7 +9,7 @@ const manifest = JSON.parse(await readFile(new URL('../internal/appsscript.json'
 const sharedCode = publicCode.replace(/^function doGet\(/m, 'function publicDoGet_(')
   .replace(/^function getTimeline\(/m, 'function publicGetTimeline_(');
 const SOURCE_ID = 'FICTIONAL_INTERNAL_SOURCE_1234';
-const INTERNAL_ERROR = '無法讀取內部排程，請確認登入帳號具有專案列表存取權限。';
+const INTERNAL_ERROR = '排程目前無法讀取，請稍後重試。';
 const PUBLIC_ERROR = '排程目前無法讀取，請稍後重試。';
 const header = ['案號', '目前交付目標', '專案／範圍', '客戶', '負責人', '狀態', '原始開始', '原始結束',
   '延長修正／補充', '交付步驟（參考）', '資料', '窗口', '執行者', '目前排程開始', '目前排程結束',
@@ -66,8 +66,8 @@ function setup(options = {}, code = sharedCode + '\n' + adapterCode) {
   return { context, rpc, state, rows };
 }
 
-test('internal manifest requires sign-in and accessing-user execution with only Sheets read permission', () => {
-  assert.deepEqual(manifest.webapp, { executeAs: 'USER_ACCESSING', access: 'ANYONE' });
+test('teamspace manifest uses anonymous deployer execution with only Sheets read permission', () => {
+  assert.deepEqual(manifest.webapp, { executeAs: 'USER_DEPLOYING', access: 'ANYONE_ANONYMOUS' });
   assert.deepEqual(manifest.oauthScopes, ['https://www.googleapis.com/auth/spreadsheets.readonly']);
   assert.equal(manifest.timeZone, 'Asia/Taipei');
   assert.equal(manifest.runtimeVersion, 'V8');
@@ -91,14 +91,14 @@ test('one current source read returns the schedule plus the exact internal text 
   assert.doesNotMatch(JSON.stringify(payload), /private\.example|FICTIONAL_INTERNAL_SOURCE|sourceUrl|rawRow|properties|originalStart/);
 });
 
-test('permission-denied and revoked sharing fail generically without any cached or deployer fallback', () => {
+test('source failures return a generic error and never substitute cached data', () => {
   const denied = setup({ readError: '403 Permission denied ' + SOURCE_ID + ' https://private.example/source FictionalCustomer' });
   assert.throws(() => denied.rpc('getTimeline'), { message: INTERNAL_ERROR });
   assert.equal(denied.state.reads.length, 1);
   const allowed = setup();
   assert.equal(allowed.rpc('getTimeline').projects[0].name, 'FictionalProject');
-  // A subsequent request must read Sheets again so a prior successful response
-  // cannot replace the accessing account's current source permissions.
+  // A subsequent request must read Sheets again; earlier data cannot substitute
+  // for an unavailable current source.
   allowed.context.Sheets.Spreadsheets.Values.get = () => { throw new Error('403 revoked sharing PRIVATE_SOURCE'); };
   assert.throws(() => allowed.rpc('getTimeline'), { message: INTERNAL_ERROR });
 });
@@ -191,11 +191,11 @@ test('source properties and client-supplied parameters cannot select another sou
   }
 });
 
-test('internal HTML contains no source read and retains Google default iframe protection', () => {
+test('teamspace HTML contains no source read and permits Pages embedding without login', () => {
   const env = setup();
   const html = env.rpc('doGet', { queryString: '', parameter: {}, parameters: {}, pathInfo: '' });
-  assert.equal(html.file, 'Index'); assert.equal(html.title, 'PM Studio 內部排程');
-  assert.ok(!Object.hasOwn(html, 'frame'));
+  assert.equal(html.file, 'Index'); assert.equal(html.title, 'PM Studio 團隊專案排程');
+  assert.equal(html.frame, 'ALLOWALL');
   assert.deepEqual(plain(html.meta), { name: 'viewport', content: 'width=device-width, initial-scale=1' });
   assert.equal(env.state.reads.length, 0);
   for (const event of [{ queryString: 'mode=internal' }, { parameter: { source: '' } }, { parameters: { source: [''] } }, { pathInfo: 'internal' }, { postData: {} }, 'internal']) {
@@ -203,7 +203,8 @@ test('internal HTML contains no source read and retains Google default iframe pr
   }
   assert.throws(() => env.rpc('doGet', {}, {}), { message: INTERNAL_ERROR });
   assert.throws(() => setup({ htmlError: true }).rpc('doGet'), { message: INTERNAL_ERROR });
-  assert.doesNotMatch(adapterCode, /ALLOWALL|setXFrameOptionsMode/);
+  assert.match(adapterCode, /setXFrameOptionsMode\(HtmlService\.XFrameOptionsMode\.ALLOWALL\)/);
+  assert.doesNotMatch(adapterCode, /USER_ACCESSING|登入帳號|Session\./);
 });
 
 test('the bundled RPC surface has only the internal read endpoints and no credential/write/cache APIs', () => {
