@@ -49,13 +49,11 @@ function setup(options = {}, code = sharedCode + '\n' + adapterCode) {
         return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
       }
     },
-    HtmlService: {
-      XFrameOptionsMode: { ALLOWALL: 'ALLOWALL' },
-      createHtmlOutputFromFile(file) {
-        if (options.htmlError) throw new Error('PRIVATE_HTML_ERROR');
-        return { file, setTitle(value) { this.title = value; return this; },
-          addMetaTag(name, content) { this.meta = { name, content }; return this; },
-          setXFrameOptionsMode(value) { this.frame = value; return this; } };
+    ContentService: {
+      MimeType: { JSON: 'JSON' },
+      createTextOutput(content) {
+        if (options.outputError) throw new Error('PRIVATE_OUTPUT_ERROR ' + SOURCE_ID);
+        return { content, setMimeType(value) { this.mimeType = value; return this; } };
       }
     }
   });
@@ -192,20 +190,63 @@ test('source properties and client-supplied parameters cannot select another sou
   }
 });
 
-test('teamspace HTML contains no source read and permits Pages embedding without login', () => {
-  const env = setup();
-  const html = env.rpc('doGet', { queryString: '', parameter: {}, parameters: {}, pathInfo: '' });
-  assert.equal(html.file, 'Index'); assert.equal(html.title, 'PM Studio 團隊專案排程');
-  assert.equal(html.frame, 'ALLOWALL');
-  assert.deepEqual(plain(html.meta), { name: 'viewport', content: 'width=device-width, initial-scale=1' });
-  assert.equal(env.state.reads.length, 0);
-  for (const event of [{ queryString: 'mode=internal' }, { parameter: { source: '' } }, { parameters: { source: [''] } }, { pathInfo: 'internal' }, { postData: {} }, 'internal']) {
-    assert.throws(() => env.rpc('doGet', event), { message: INTERNAL_ERROR });
+test('anonymous teamspace JSON GET freshly reads the same source and includes exactly nine text fields for pending and scheduled records', () => {
+  const env = setup({ rows: [row(), row({ '案號': 'BG-002', '工作區 A 占用': '', '目前排程結束': '' })] });
+  const firstOutput = env.rpc('doGet', { queryString: '', parameter: {}, parameters: {}, pathInfo: '' });
+  assert.equal(firstOutput.mimeType, 'JSON');
+  const first = JSON.parse(firstOutput.content);
+  assert.equal(first.projects.length, 2);
+  assert.deepEqual(first, plain(setup({ rows: env.rows.slice(5) }).rpc('getTimeline')));
+  for (const item of first.projects) {
+    assert.deepEqual(Object.keys(item).sort(), ['id', 'customerCode', 'customerType', 'start', 'end',
+      'correctionStart', 'correctionEnd', 'scheduleKind', 'followUp', 'workspaceIds', 'workspaceUnits', 'pendingReasons',
+      ...privateKeys].sort());
   }
-  assert.throws(() => env.rpc('doGet', {}, {}), { message: INTERNAL_ERROR });
-  assert.throws(() => setup({ htmlError: true }).rpc('doGet'), { message: INTERNAL_ERROR });
-  assert.match(adapterCode, /setXFrameOptionsMode\(HtmlService\.XFrameOptionsMode\.ALLOWALL\)/);
+  assert.ok(first.projects[1].pendingReasons.includes('no-workspace'));
+  assert.ok(first.projects[1].pendingReasons.includes('production-dates'));
+  assert.doesNotMatch(firstOutput.content, /private\.example|FICTIONAL_INTERNAL_SOURCE|sourceUrl|rawRow|properties/);
+  env.rows[5][header.indexOf('專案／範圍')] = 'FictionalUpdatedProject';
+  env.rows[5][header.indexOf('目前交付目標')] = 'FictionalUpdatedGoal';
+  const second = JSON.parse(env.rpc('doGet').content);
+  assert.equal(first.projects[0].name, 'FictionalProject');
+  assert.equal(second.projects[0].name, 'FictionalUpdatedProject');
+  assert.equal(second.projects[0].deliveryGoal, 'FictionalUpdatedGoal');
+  assert.equal(env.state.reads.length, 2);
+  assert.deepEqual(env.state.reads[1], env.state.reads[0]);
+  const publicPayload = JSON.parse(setup({ rows: env.rows.slice(5) }, publicCode).rpc('doGet').content);
+  const sharedPayload = plain(second);
+  for (const item of sharedPayload.projects) for (const key of internalOnlyKeys) delete item[key];
+  assert.deepEqual(publicPayload, sharedPayload);
+});
+
+test('teamspace JSON GET rejects parameters, extra paths and arguments without source reads', () => {
+  const env = setup();
+  for (const event of [{ queryString: 'mode=internal' }, { parameter: { source: '' } }, { parameters: { source: [''] } }, { pathInfo: 'internal' }, { postData: {} }, 'internal']) {
+    const output = env.rpc('doGet', event);
+    assert.equal(output.mimeType, 'JSON');
+    assert.deepEqual(JSON.parse(output.content), { error: INTERNAL_ERROR });
+  }
+  assert.deepEqual(JSON.parse(env.rpc('doGet', {}, {}).content), { error: INTERNAL_ERROR });
+  assert.equal(env.state.reads.length, 0);
   assert.doesNotMatch(adapterCode, /USER_ACCESSING|登入帳號|Session\./);
+});
+
+test('teamspace JSON GET failures expose only generic errors and cannot return earlier source data', () => {
+  for (const options of [{ readError: 'PRIVATE_READ_ERROR ' + SOURCE_ID }, { properties: {} }, { response: {} }, { rows: [row(), row()] }]) {
+    const output = setup(options).rpc('doGet');
+    assert.equal(output.mimeType, 'JSON');
+    assert.deepEqual(JSON.parse(output.content), { error: INTERNAL_ERROR });
+    assert.doesNotMatch(output.content, /PRIVATE|FICTIONAL_INTERNAL_SOURCE|private\.example|projects/);
+  }
+  const env = setup();
+  assert.equal(JSON.parse(env.rpc('doGet').content).projects[0].name, 'FictionalProject');
+  env.context.Sheets.Spreadsheets.Values.get = () => {
+    env.state.reads.push({ denied: true });
+    throw new Error('PRIVATE_REVOKED_SOURCE ' + SOURCE_ID);
+  };
+  assert.deepEqual(JSON.parse(env.rpc('doGet').content), { error: INTERNAL_ERROR });
+  assert.equal(env.state.reads.length, 2);
+  assert.throws(() => setup({ outputError: true }).rpc('doGet'), { message: INTERNAL_ERROR });
 });
 
 test('the bundled RPC surface has only the internal read endpoints and no credential/write/cache APIs', () => {

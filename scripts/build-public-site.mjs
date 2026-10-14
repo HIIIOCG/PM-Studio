@@ -1,4 +1,4 @@
-import { writeFile, mkdir, readdir, lstat, mkdtemp, rename, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, lstat, mkdtemp, rename, rm } from 'node:fs/promises';
 import { realpath as resolveFilesystemPath } from 'node:fs';
 import { promisify } from 'node:util';
 import { basename, dirname, resolve, relative, isAbsolute, sep } from 'node:path';
@@ -26,51 +26,55 @@ export function validateTeamspaceAppUrl(value) {
   return validateExecutionUrl(value, 'PM_STUDIO_TEAMSPACE_APP_URL');
 }
 
+function browserSource(source) {
+  return source.replace(/^import[^\n]*\n/gm, '').replace(/^export\s+/gm, '');
+}
+
+function safeScript(source) {
+  return source.replace(/<\/script/gi, '<\\/script');
+}
+
+async function renderDirectEntry(appUrl, teamspace) {
+  const url = teamspace ? validateTeamspaceAppUrl(appUrl) : validateAppUrl(appUrl);
+  const read = (path) => readFile(resolve(root, path), 'utf8');
+  const paths = [
+    'web/dist/index.html', 'web/dist/styles.css', 'web/dist/app.mjs',
+    'google-app/ui/common-contract.mjs', 'google-app/ui/http-bridge.mjs',
+    'web/dist/localization.mjs',
+    ...(teamspace ? ['google-app/internal/ui/internal-contract.mjs'] : []),
+    teamspace ? 'google-app/internal/ui/client.mjs' : 'google-app/ui/client.mjs',
+  ];
+  const [sourceHtml, sourceCss, ...modules] = await Promise.all(paths.map(read));
+  // Reuse the same view client, changing only its transport in the Pages bundle.
+  const initializer = /^const readSchedule = createGoogleBridge\(\);\r?$/gm;
+  const client = modules.at(-1);
+  if ([...client.matchAll(initializer)].length !== 1) throw new Error('Unexpected schedule client entry.');
+  modules[modules.length - 1] = client.replace(initializer,
+    'const readSchedule = createTimelineHttpBridge(timelineReadUrl);');
+  const script = '// Generated from PM Studio sources. No project records are embedded.\n(async () => {\n'
+    + 'const timelineReadUrl = ' + JSON.stringify(url) + ';\n'
+    + modules.map(browserSource).join('\n') + '\n})();';
+  const teamspaceCss = teamspace ? '\n.internal-access-note { margin: -10px 0 22px; color: #a6bfce; font-size: 12px; line-height: 1.7; }\n.project-name { font-size: 11px; color: #c5d6e2; font-weight: 500; }\n.pending-card .project-name { overflow-wrap: anywhere; }\n' : '';
+  let html = sourceHtml
+    .replace('<meta name="color-scheme" content="dark">',
+      '<meta name="color-scheme" content="dark">\n  <meta name="referrer" content="no-referrer">'
+      + (teamspace ? '\n  <meta name="robots" content="noindex,nofollow">' : ''))
+    .replace('<link rel="stylesheet" href="/styles.css">', () => '<style>\n' + sourceCss + teamspaceCss + '</style>')
+    .replace('<script type="module" src="/app.mjs"></script>', () => '<script>\n' + safeScript(script) + '\n</script>');
+  if (teamspace) html = html
+    .replace('<title>PM Studio｜專案排程</title>', '<title>PM Studio｜團隊專案排程</title>')
+    .replace('<h1 id="schedule-title">專案排程</h1>', '<h1 id="schedule-title">團隊專案排程</h1>')
+    .replace('<p id="preview-note"', '<p id="internal-access-note" class="internal-access-note">排程畫面為唯讀。</p>\n    <p id="preview-note"');
+  if (/<iframe\b|google\.script\.run|createGoogleBridge\(/.test(html)) throw new Error('Unexpected Google UI transport.');
+  return html;
+}
+
 export function renderPublicEntry(appUrl) {
-  const url = validateAppUrl(appUrl);
-  return `<!doctype html>
-<html lang="zh-Hant">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer">
-<title>PM Studio</title>
-<style>
-:root{color-scheme:light dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#111518;color:#e8ecef}
-*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0}iframe{position:fixed;inset:0;width:100%;height:100%;height:100dvh;border:0;background:#111518}
-.open-schedule{position:fixed;right:8px;bottom:8px;padding:5px 9px;border:1px solid #647078;border-radius:6px;background:#192126;color:#dce6ec;font-size:11px;text-decoration:none;opacity:.86}.open-schedule:focus-visible{outline:3px solid #88cced;outline-offset:2px}
-</style>
-</head>
-<body>
-<iframe id="schedule" src="${url}" title="PM Studio 專案排程" referrerpolicy="no-referrer"></iframe>
-<a class="open-schedule" href="${url}" target="_blank" rel="noopener noreferrer" aria-label="在新分頁開啟排程">另開排程 ↗</a>
-</body>
-</html>
-`;
+  return renderDirectEntry(appUrl, false);
 }
 
 export function renderTeamspaceEntry(appUrl) {
-  const url = validateTeamspaceAppUrl(appUrl);
-  return `<!doctype html>
-<html lang="zh-Hant">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer">
-<meta name="robots" content="noindex,nofollow">
-<title>PM Studio 團隊排程</title>
-<style>
-:root{color-scheme:light dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#111518;color:#e8ecef}
-*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0}iframe{position:fixed;inset:0;width:100%;height:100%;height:100dvh;border:0;background:#111518}
-.open-schedule{position:fixed;right:8px;bottom:8px;padding:5px 9px;border:1px solid #647078;border-radius:6px;background:#192126;color:#dce6ec;font-size:11px;text-decoration:none;opacity:.86}.open-schedule:focus-visible{outline:3px solid #88cced;outline-offset:2px}
-</style>
-</head>
-<body>
-<iframe id="schedule" src="${url}" title="PM Studio 團隊排程" referrerpolicy="no-referrer"></iframe>
-<a class="open-schedule" href="${url}" target="_blank" rel="noopener noreferrer" aria-label="在新分頁開啟團隊排程">另開團隊排程 ↗</a>
-</body>
-</html>
-`;
+  return renderDirectEntry(appUrl, true);
 }
 
 function requireContainedPath(workspace, target) {

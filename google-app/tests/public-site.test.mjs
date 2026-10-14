@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile, readdir, rm, symlink } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Script } from 'node:vm';
 import { buildPublicSite, validateAppUrl, validateTeamspaceAppUrl, renderPublicEntry, renderTeamspaceEntry } from '../../scripts/build-public-site.mjs';
 import { createPublicPreviewHandler } from '../../scripts/serve-public-site.mjs';
 
@@ -13,6 +14,34 @@ const appUrl = 'https://script.google.com/macros/s/FICTIONAL_PM_STUDIO_TEST_001/
 const updatedUrl = 'https://script.google.com/macros/s/FICTIONAL_PM_STUDIO_TEST_002/exec';
 const teamspaceUrl = 'https://script.google.com/macros/s/FICTIONAL_PM_STUDIO_TEAMSPACE_001/exec';
 const updatedTeamspaceUrl = 'https://script.google.com/macros/s/FICTIONAL_PM_STUDIO_TEAMSPACE_002/exec';
+
+function assertDirectUi(html, endpoint, teamspace = false) {
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+  assert.equal(scripts.length, 1);
+  new Script(scripts[0][1]);
+  assert.ok(scripts[0][1].includes('const timelineReadUrl = ' + JSON.stringify(endpoint) + ';'));
+  assert.match(html, /<style>[\s\S]+<\/style>/);
+  assert.match(html, /<main class="app">/);
+  assert.match(html, /id="timeline-viewport"/);
+  assert.match(html, /id="pending-section"/);
+  assert.match(html, /id="retry"/);
+  assert.match(html, /<meta name="referrer" content="no-referrer">/);
+  assert.match(html, /const readSchedule = createTimelineHttpBridge\(timelineReadUrl\);/);
+  assert.match(html, /credentials:\s*'omit'/);
+  assert.doesNotMatch(html, /<iframe\b|<link[^>]+href=|<script[^>]+src=|google\.script|createGoogleBridge\(|class="open-schedule"/);
+  assert.doesNotMatch(html, /schedule\.json|SOURCE_SHEET_ID|INTERNAL_SHEET_ID|docs\.google\.com\/spreadsheets|saveLayout|publishApprovedSnapshot|assignment-form|id="search"|C-901|TEST-01|PRIVATE_SOURCE_IDENTIFIER/);
+  assert.doesNotMatch(html, /innerHTML|insertAdjacentHTML/);
+  if (teamspace) {
+    assert.match(html, /<title>PM Studio｜團隊專案排程<\/title>/);
+    assert.match(html, /<meta name="robots" content="noindex,nofollow">/);
+    assert.match(html, /normalizeInternalTimelinePayload/);
+    assert.match(html, /INTERNAL_ONLY_PROJECT_FIELDS/);
+    assert.match(html, /function projectName\(/);
+  } else {
+    assert.match(html, /<title>PM Studio｜專案排程<\/title>/);
+    assert.doesNotMatch(html, /\/teamspace\/|INTERNAL_ONLY_PROJECT_FIELDS|normalizeInternalTimelinePayload|function projectName\(|internal-access-note|團隊專案排程/);
+  }
+}
 
 async function temporaryDirectory(t) {
   await mkdir(local, { recursive: true });
@@ -71,7 +100,7 @@ test('invalid teamspace URLs are rejected before an existing publication changes
   const previousTeamspace = await readFile(resolve(outputDir, 'teamspace/index.html'), 'utf8');
   await assert.rejects(buildPublicSite({ appUrl: updatedUrl, teamspaceAppUrl: `${teamspaceUrl}?source=PRIVATE`, outputDir }), /PM_STUDIO_TEAMSPACE_APP_URL/);
   assert.equal(await readFile(resolve(outputDir, 'teamspace/index.html'), 'utf8'), previousTeamspace);
-  assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), renderPublicEntry(appUrl));
+  assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), await renderPublicEntry(appUrl));
 });
 
 test('public build requires a valid URL and refuses private or unexpected output files', async (t) => {
@@ -87,19 +116,14 @@ test('public build requires a valid URL and refuses private or unexpected output
   await assert.rejects(buildPublicSite({ appUrl, outputDir: resolve(root, '..', 'outside') }), /獨立資料夾/);
 });
 
-test('public output contains only the read-only iframe entry and no project snapshot or internal code', async (t) => {
+test('public output contains the direct read-only UI and no project snapshot or teamspace client', async (t) => {
   const directory = await temporaryDirectory(t);
   const outputDir = resolve(directory, 'site');
   const result = await buildPublicSite({ appUrl, outputDir });
   assert.equal(result.outputDir, outputDir);
   assert.deepEqual((await readdir(outputDir)).sort(), ['.nojekyll', 'index.html']);
   const html = await readFile(resolve(outputDir, 'index.html'), 'utf8');
-  assert.ok(html.includes(`<iframe id="schedule" src="${appUrl}"`));
-  assert.match(html, /height:100dvh/);
-  assert.match(html, /referrerpolicy="no-referrer"/);
-  assert.match(html, /另開排程/);
-  assert.doesNotMatch(html, /schedule\.json|google\.script|saveLayout|publishApprovedSnapshot|INTERNAL_SHEET_ID|sourceUrl|fetch\(|\/api\/|search|assignment-form|客戶名|目前交付目標/);
-  assert.doesNotMatch(html, /<script|connection|setTimeout|addEventListener/);
+  assertDirectUi(html, appUrl);
   await buildPublicSite({ appUrl: updatedUrl, outputDir });
   assert.match(await readFile(resolve(outputDir, 'index.html'), 'utf8'), /TEST_002\/exec/);
   assert.deepEqual(await readdir(directory), ['site']);
@@ -124,15 +148,12 @@ test('optional teamspace entry opens the timeline directly and leaves the public
   const result = await buildPublicSite({ appUrl, teamspaceAppUrl: teamspaceUrl, outputDir });
   assert.deepEqual((await readdir(outputDir)).sort(), ['.nojekyll', 'index.html', 'teamspace']);
   assert.deepEqual(await readdir(resolve(outputDir, 'teamspace')), ['index.html']);
-  assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), renderPublicEntry(appUrl));
+  assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), await renderPublicEntry(appUrl));
   const teamspaceHtml = await readFile(resolve(outputDir, 'teamspace/index.html'), 'utf8');
-  assert.equal(teamspaceHtml, renderTeamspaceEntry(teamspaceUrl));
-  assert.ok(teamspaceHtml.includes(`<iframe id="schedule" src="${teamspaceUrl}" title="PM Studio 團隊排程"`));
-  assert.ok(teamspaceHtml.includes(`href="${teamspaceUrl}" target="_blank" rel="noopener noreferrer"`));
-  assert.match(teamspaceHtml, /另開團隊排程/);
-  assert.match(teamspaceHtml, /height:100dvh/);
-  assert.doesNotMatch(teamspaceHtml, /http-equiv="refresh"|登入|帳號|授權|<script|fetch\(|google\.script|SOURCE_SHEET_ID|docs\.google\.com\/spreadsheets|projects|schedule\.json/);
-  assert.doesNotMatch(await readFile(resolve(outputDir, 'index.html'), 'utf8'), /internal|teamspace|內部|團隊/);
+  assert.equal(teamspaceHtml, await renderTeamspaceEntry(teamspaceUrl));
+  assertDirectUi(teamspaceHtml, teamspaceUrl, true);
+  assert.doesNotMatch(teamspaceHtml, /http-equiv="refresh"|登入|帳號|授權/);
+  assertDirectUi(await readFile(resolve(outputDir, 'index.html'), 'utf8'), appUrl);
   assert.equal(JSON.stringify(result).includes(teamspaceUrl), false);
   await buildPublicSite({ appUrl, teamspaceAppUrl: '', outputDir });
   assert.deepEqual((await readdir(outputDir)).sort(), ['.nojekyll', 'index.html']);
@@ -144,7 +165,7 @@ test('teamspace URL can be supplied privately through the environment', async (t
   try {
     process.env.PM_STUDIO_TEAMSPACE_APP_URL = teamspaceUrl;
     const result = await buildPublicSite({ appUrl, outputDir: resolve(directory, 'site') });
-    assert.equal(await readFile(resolve(result.outputDir, 'teamspace/index.html'), 'utf8'), renderTeamspaceEntry(teamspaceUrl));
+    assert.equal(await readFile(resolve(result.outputDir, 'teamspace/index.html'), 'utf8'), await renderTeamspaceEntry(teamspaceUrl));
     assert.equal(JSON.stringify(result).includes(teamspaceUrl), false);
   } finally {
     if (previous === undefined) delete process.env.PM_STUDIO_TEAMSPACE_APP_URL;
@@ -160,12 +181,12 @@ test('teamspace generation and install failures restore both complete entry page
   await assert.rejects(buildPublicSite({ appUrl: updatedUrl, teamspaceAppUrl: updatedTeamspaceUrl, outputDir,
     renderTeamspace: async () => { throw new Error('Simulated teamspace generation failure'); },
   }), /Simulated teamspace generation failure/);
-  assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), renderPublicEntry(appUrl));
+  assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), await renderPublicEntry(appUrl));
   assert.equal(await readFile(resolve(outputDir, 'teamspace/index.html'), 'utf8'), originalTeamspace);
   await assert.rejects(buildPublicSite({ appUrl: updatedUrl, teamspaceAppUrl: updatedTeamspaceUrl, outputDir,
     installDirectory: async () => { throw new Error('Simulated teamspace install failure'); },
   }), /Simulated teamspace install failure/);
-  assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), renderPublicEntry(appUrl));
+  assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), await renderPublicEntry(appUrl));
   assert.equal(await readFile(resolve(outputDir, 'teamspace/index.html'), 'utf8'), originalTeamspace);
   assert.deepEqual(await readdir(directory), ['site']);
 });
@@ -219,7 +240,7 @@ test('the exact legacy internal entry migrates atomically to teamspace and is ke
   await writeFile(resolve(outputDir, 'internal/index.html'), 'previous signed-in entry');
   const result = await buildPublicSite({ appUrl, teamspaceAppUrl: teamspaceUrl, outputDir });
   assert.deepEqual((await readdir(outputDir)).sort(), ['.nojekyll', 'index.html', 'teamspace']);
-  assert.equal(await readFile(resolve(outputDir, 'teamspace/index.html'), 'utf8'), renderTeamspaceEntry(teamspaceUrl));
+  assert.equal(await readFile(resolve(outputDir, 'teamspace/index.html'), 'utf8'), await renderTeamspaceEntry(teamspaceUrl));
   assert.equal(await readFile(resolve(result.previousSiteBackup, 'internal/index.html'), 'utf8'), 'previous signed-in entry');
   await assert.rejects(readFile(resolve(outputDir, 'internal/index.html')), { code: 'ENOENT' });
 });
@@ -321,15 +342,12 @@ test('junction ancestors are rejected before writing through them', async (t) =>
   assert.deepEqual(await readdir(actual), []);
 });
 
-test('both entries never mask the iframe or depend on cross-origin load events', () => {
-  for (const html of [renderPublicEntry(appUrl), renderTeamspaceEntry(teamspaceUrl)]) {
-    const body = html.match(/<body>([\s\S]*?)<\/body>/)?.[1];
-    assert.ok(body);
-    assert.deepEqual([...body.matchAll(/<([a-z][\w-]*)\b/gi)].map((match) => match[1]), ['iframe', 'a']);
-    assert.match(html, /iframe\{position:fixed;inset:0;width:100%;height:100%;height:100dvh/);
-    assert.doesNotMatch(html, /<script|connection|setTimeout|addEventListener|onload|onerror|opacity:0|visibility:hidden|display:none/);
-    assert.match(html, /class="open-schedule"[^>]+target="_blank"[^>]+rel="noopener noreferrer"/);
-  }
+test('both direct entries inline their UI and use their own fixed JSON endpoint', async () => {
+  const [publicHtml, teamspaceHtml] = await Promise.all([renderPublicEntry(appUrl), renderTeamspaceEntry(teamspaceUrl)]);
+  assertDirectUi(publicHtml, appUrl);
+  assertDirectUi(teamspaceHtml, teamspaceUrl, true);
+  assert.equal(publicHtml.includes(teamspaceUrl), false);
+  assert.equal(teamspaceHtml.includes(appUrl), false);
 });
 
 test('preview serves the entry at the project path and rejects snapshot and private paths', async (t) => {
@@ -353,7 +371,7 @@ test('preview serves the entry at the project path and rejects snapshot and priv
   for (const path of ['/PM-Studio/', '/PM-Studio/index.html']) {
     const response = await request(path);
     assert.equal(response.status, 200);
-    assert.match(response.body, /<iframe/);
+    assertDirectUi(response.body, appUrl);
     assert.equal(response.headers['X-Content-Type-Options'], 'nosniff');
   }
   const head = await request('/PM-Studio/', 'HEAD');
@@ -387,7 +405,7 @@ test('preview serves only the fixed teamspace entry routes and retains private-f
   for (const path of ['/PM-Studio/teamspace/', '/PM-Studio/teamspace/index.html']) {
     const response = await request(path);
     assert.equal(response.status, 200);
-    assert.equal(response.body, renderTeamspaceEntry(teamspaceUrl));
+    assert.equal(response.body, await renderTeamspaceEntry(teamspaceUrl));
     assert.equal(response.headers['X-Content-Type-Options'], 'nosniff');
     assert.equal((await request(path, 'HEAD')).body, undefined);
     assert.equal((await request(path, 'POST')).status, 405);

@@ -42,13 +42,11 @@ function setup(options = {}) {
         return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
       }
     },
-    HtmlService: {
-      XFrameOptionsMode: { ALLOWALL: 'ALLOWALL' },
-      createHtmlOutputFromFile(file) {
-        if (options.htmlError) throw new Error('Secret HTML failure');
-        return { file, setTitle(value) { this.title = value; return this; },
-          addMetaTag(name, content) { this.meta = { name, content }; return this; },
-          setXFrameOptionsMode(value) { this.frame = value; return this; } };
+    ContentService: {
+      MimeType: { JSON: 'JSON' },
+      createTextOutput(content) {
+        if (options.outputError) throw new Error('Secret output failure ' + SOURCE_ID);
+        return { content, setMimeType(value) { this.mimeType = value; return this; } };
       }
     }
   });
@@ -326,16 +324,56 @@ test('only the configured source property is accepted, including no caller-suppl
   }
 });
 
-test('HTML permits the read-only Pages frame but rejects URL parameters and private failures', () => {
-  const env = setup();
-  const html = env.rpc('doGet', { queryString: '', parameter: {}, parameters: {}, pathInfo: '' });
-  assert.equal(html.file, 'Index'); assert.equal(html.title, 'PM Studio'); assert.equal(html.frame, 'ALLOWALL');
-  assert.deepEqual(plain(html.meta), { name: 'viewport', content: 'width=device-width, initial-scale=1' });
-  assert.equal(env.state.reads.length, 0);
-  for (const event of [{ queryString: 'mode=internal' }, { parameter: { source: '' } }, { parameters: { source: [''] } }, { pathInfo: 'internal' }, { postData: {} }, 'internal']) {
-    assert.throws(() => env.rpc('doGet', event), { message: PUBLIC_ERROR });
+test('anonymous JSON GET reads the current sheet each time and returns only five public text fields including pending records', () => {
+  const env = setup({ rows: [row(), row({ '案號': 'BG-002', '工作區 A 占用': '', '目前排程結束': '' })] });
+  const firstOutput = env.rpc('doGet', { queryString: '', parameter: {}, parameters: {}, pathInfo: '' });
+  assert.equal(firstOutput.mimeType, 'JSON');
+  const first = JSON.parse(firstOutput.content);
+  assert.equal(first.projects.length, 2);
+  assert.deepEqual(first, plain(setup({ rows: env.rows.slice(5) }).rpc('getTimeline')));
+  for (const item of first.projects) {
+    assert.deepEqual(Object.keys(item).sort(), ['id', 'customerCode', 'customerType', 'start', 'end',
+      'correctionStart', 'correctionEnd', 'scheduleKind', 'followUp', 'workspaceIds', 'workspaceUnits', 'pendingReasons',
+      'owner', 'status', 'deliveryGoal', 'notes', 'deliverySteps'].sort());
   }
-  assert.throws(() => setup({ htmlError: true }).rpc('doGet'), { message: PUBLIC_ERROR });
+  assert.ok(first.projects[1].pendingReasons.includes('no-workspace'));
+  assert.ok(first.projects[1].pendingReasons.includes('production-dates'));
+  assert.doesNotMatch(firstOutput.content, /PrivateProject|PrivateCustomer|PrivateExecutor|PrivateContact|private\.example|FICTIONAL_SOURCE|sourceUrl|rawRow/);
+  env.rows[5][header.indexOf('目前交付目標')] = 'FictionalUpdatedGoal';
+  const second = JSON.parse(env.rpc('doGet').content);
+  assert.equal(first.projects[0].deliveryGoal, 'FictionalGoal');
+  assert.equal(second.projects[0].deliveryGoal, 'FictionalUpdatedGoal');
+  assert.equal(env.state.reads.length, 2);
+  assert.deepEqual(env.state.reads[1], env.state.reads[0]);
+});
+
+test('JSON GET rejects queries, paths and extra arguments before any source read', () => {
+  const env = setup();
+  for (const event of [{ queryString: 'mode=internal' }, { parameter: { source: '' } }, { parameters: { source: [''] } }, { pathInfo: 'internal' }, { postData: {} }, 'internal']) {
+    const output = env.rpc('doGet', event);
+    assert.equal(output.mimeType, 'JSON');
+    assert.deepEqual(JSON.parse(output.content), { error: PUBLIC_ERROR });
+  }
+  assert.deepEqual(JSON.parse(env.rpc('doGet', {}, {}).content), { error: PUBLIC_ERROR });
+  assert.equal(env.state.reads.length, 0);
+});
+
+test('JSON GET failures return only a generic error and never substitute an earlier successful read', () => {
+  for (const options of [{ readError: true }, { properties: {} }, { response: {} }, { rows: [row(), row()] }]) {
+    const output = setup(options).rpc('doGet');
+    assert.equal(output.mimeType, 'JSON');
+    assert.deepEqual(JSON.parse(output.content), { error: PUBLIC_ERROR });
+    assert.doesNotMatch(output.content, /Secret|PRIVATE|FICTIONAL_SOURCE|private\.example|projects/);
+  }
+  const env = setup();
+  assert.equal(JSON.parse(env.rpc('doGet').content).projects.length, 1);
+  env.context.Sheets.Spreadsheets.Values.get = () => {
+    env.state.reads.push({ denied: true });
+    throw new Error('Secret revoked permission ' + SOURCE_ID);
+  };
+  assert.deepEqual(JSON.parse(env.rpc('doGet').content), { error: PUBLIC_ERROR });
+  assert.equal(env.state.reads.length, 2);
+  assert.throws(() => setup({ outputError: true }).rpc('doGet'), { message: PUBLIC_ERROR });
 });
 
 test('public RPC surface has only doGet and getTimeline; helpers and all former writes are unavailable', () => {

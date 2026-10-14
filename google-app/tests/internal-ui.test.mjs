@@ -7,6 +7,7 @@ import { Script, createContext } from 'node:vm';
 import { normalizeTimelinePayload } from '../ui/common-contract.mjs';
 import { normalizeInternalTimelinePayload, INTERNAL_PROJECT_FIELDS } from '../internal/ui/internal-contract.mjs';
 import { buildGoogleUi } from '../../scripts/build-google-ui.mjs';
+import { renderPublicEntry, renderTeamspaceEntry } from '../../scripts/build-public-site.mjs';
 import { createPreviewPayload } from '../../scripts/serve-google-preview.mjs';
 
 function sample() {
@@ -62,7 +63,7 @@ function browserDocument(html) {
   Object.defineProperty(document, 'title', { get() { return container.querySelector('title').textContent; }, set(value) { container.querySelector('title').textContent = value; } });
   return { document, elements };
 }
-async function mount(html, data, { width = 900, failInitially = false } = {}) {
+async function mount(html, data, { width = 900, failInitially = false, http = false } = {}) {
   const { document, elements } = browserDocument(html);
   const viewport = elements.get('timeline-viewport');
   Object.defineProperty(viewport, 'clientWidth', { get() { return width; } });
@@ -70,7 +71,14 @@ async function mount(html, data, { width = 900, failInitially = false } = {}) {
   const calls = [], preferences = new Map();
   class BrowserDate extends Date { constructor(...args) { super(...(args.length ? args : [data.syncedAt])); } }
   const runner = { withSuccessHandler(callback) { this.ok = callback; return this; }, withFailureHandler(callback) { this.bad = callback; return this; }, getTimeline(...args) { calls.push(args); if (fail) this.bad(new Error('PRIVATE_SOURCE_IDENTIFIER')); else this.ok(payload); } };
-  const context = createContext({ document, Intl, Date: BrowserDate, Map, Set, console, google: { script: { run: runner } }, localStorage: { getItem(key) { return preferences.get(key); }, setItem(key, value) { preferences.set(key, value); } }, ResizeObserver: class { constructor(callback) { onResize = callback; } observe() {} }, setInterval() {} });
+  const request = async (url, options) => {
+    calls.push({ url, options });
+    if (fail) throw new Error('PRIVATE_SOURCE_IDENTIFIER');
+    return new Response(JSON.stringify(payload), { headers: { 'Content-Type': 'application/json; charset=utf-8' } });
+  };
+  const context = createContext({ document, Intl, Date: BrowserDate, Map, Set, console,
+    ...(http ? { fetch: request, AbortController, setTimeout, clearTimeout } : { google: { script: { run: runner } } }),
+    localStorage: { getItem(key) { return preferences.get(key); }, setItem(key, value) { preferences.set(key, value); } }, ResizeObserver: class { constructor(callback) { onResize = callback; } observe() {} }, setInterval() {} });
   for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) await new Script(match[1]).runInContext(context);
   const get = (id) => { const node = elements.get(id); assert.ok(node, id); return node; };
   return { document, get, calls, preferences, click(id) { return get(id).click(); }, fail(value) { fail = value; }, payload(value) { payload = value; }, resize(value) { width = value; onResize(); } };
@@ -195,4 +203,120 @@ test('teamspace source failures and malformed payloads show no fabricated data o
   const denied = await mount(html, malformed);
   assert.equal(denied.get('timeline-grid').hidden, true);
   assert.doesNotMatch(denied.document.querySelector('main').textContent, /PRIVATE_SOURCE_LINK|虛構專案/);
+});
+
+const DIRECT_PUBLIC_URL = 'https://script.google.com/macros/s/FICTIONAL_DIRECT_PUBLIC_ENDPOINT/exec';
+const DIRECT_TEAMSPACE_URL = 'https://script.google.com/macros/s/FICTIONAL_DIRECT_TEAMSPACE_ENDPOINT/exec';
+
+function assertAnonymousRequest(call, url) {
+  assert.equal(call.url, url);
+  for (const [key, value] of Object.entries({ method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store', redirect: 'follow', referrerPolicy: 'no-referrer' })) assert.equal(call.options[key], value, key);
+  assert.ok(call.options.signal instanceof AbortSignal);
+  assert.equal(Object.hasOwn(call.options, 'body'), false);
+}
+
+test('public Pages UI reads by anonymous HTTP and renders only its five detail fields as text', async () => {
+  const source = createPreviewPayload(new Date('2026-12-21T04:00:00Z'));
+  source.projects[0].notes = '<img src=x onerror=alert(1)>\n中性模型補充';
+  source.projects[0].deliverySteps = '<script>PRIVATE_INJECTED_SCRIPT</script>\n中性交付步驟';
+  const html = await renderPublicEntry(DIRECT_PUBLIC_URL);
+  assert.doesNotMatch(html, /<iframe\b|google\.script\.run|createGoogleBridge\(|normalizeInternalTimelinePayload/);
+  const page = await mount(html, source, { http: true });
+  assert.equal(page.document.title, 'PM Studio｜專案排程');
+  assert.equal(page.get('timeline-grid').hidden, false);
+  assert.equal(page.get('date-range').textContent, '2026-12-17 — 2027-03-10');
+  assert.equal(page.calls.length, 1);
+  assertAnonymousRequest(page.calls[0], DIRECT_PUBLIC_URL);
+  const card = page.get('timeline-canvas').querySelectorAll('.project-card').find((node) => node.getAttribute('data-project-id') === source.projects[0].id);
+  assert.match(card.textContent, /C-901.*TEST-01 · VTuber個人/);
+  await card.click();
+  const dialog = page.get('project-details');
+  assert.equal(dialog.open, true);
+  assert.equal(dialog.querySelectorAll('.project-fields')[0].querySelectorAll('dt').length, 6);
+  for (const field of ['owner', 'status', 'deliveryGoal', 'notes', 'deliverySteps']) assert.ok(dialog.textContent.includes(source.projects[0][field]), field);
+  assert.equal(dialog.querySelectorAll('img').length, 0);
+  assert.equal(dialog.querySelectorAll('script').length, 0);
+  const pending = page.get('pending-projects').querySelector('.pending-card');
+  assert.ok(pending);
+  await pending.querySelector('button').click();
+  assert.equal(dialog.open, true);
+  assert.match(dialog.textContent, /TEST-07/);
+  await page.click('language-toggle');
+  assert.equal(page.get('schedule-title').textContent, 'Project schedule');
+  assert.equal(page.preferences.get('pm-studio-language'), 'en');
+  assert.deepEqual([...page.preferences.keys()], ['pm-studio-language']);
+  await page.click('next');
+  assert.equal(page.get('date-range').textContent, '2027-03-04 — 2027-05-26');
+  assert.equal(page.calls.length, 1);
+});
+
+test('teamspace Pages HTTP preserves nine details, month reservations and offscreen follow-up at mobile width', async () => {
+  const source = sample();
+  source.projects = [
+    { ...source.projects[0], name: '虛構 <img src=x onerror=alert(1)> 專案', notes: '<script>PRIVATE_INJECTED_SCRIPT</script>\n保留原文', scheduleKind: 'reservation', start: '2026-12', end: '2027-01', correctionStart: '', correctionEnd: '' },
+    { ...source.projects.find((project) => project.id === 'C-907') },
+  ];
+  const html = await renderTeamspaceEntry(DIRECT_TEAMSPACE_URL);
+  assert.doesNotMatch(html, /<iframe\b|google\.script\.run|createGoogleBridge\(/);
+  const page = await mount(html, source, { width: 212, http: true });
+  assert.equal(page.document.title, 'PM Studio｜團隊專案排程');
+  assert.equal(page.get('timeline-grid').hidden, false);
+  assert.equal(page.get('pending-section').hidden, true);
+  assert.equal(page.get('date-range').textContent, '2026-12-17 — 2027-01-27');
+  assert.equal(page.calls.length, 1);
+  assertAnonymousRequest(page.calls[0], DIRECT_TEAMSPACE_URL);
+  const reservation = page.get('timeline-canvas').querySelector('.reservation');
+  assert.equal(reservation.getAttribute('data-start-precision'), 'month');
+  assert.match(reservation.textContent, /虛構 <img/);
+  await reservation.click();
+  const dialog = page.get('project-details');
+  for (const field of INTERNAL_PROJECT_FIELDS) assert.ok(dialog.textContent.includes(source.projects[0][field]), field);
+  assert.equal(dialog.querySelectorAll('.project-fields')[0].querySelectorAll('dt').length, 9);
+  assert.equal(dialog.querySelectorAll('img').length, 0);
+  assert.equal(dialog.querySelectorAll('script').length, 0);
+  const endpoint = page.get('timeline-canvas').querySelector('.follow-up-endpoint');
+  assert.ok(page.get('timeline-canvas').querySelector('.clipped-start'));
+  assert.match(endpoint.getAttribute('aria-label'), /虛構專案 C-907.*客戶確認中.*待收款中/);
+  await endpoint.click();
+  assert.match(dialog.textContent, /虛構專案 C-907/);
+  await page.click('language-toggle');
+  assert.equal(page.get('schedule-title').textContent, 'Team project schedule');
+  await page.click('next');
+  assert.equal(page.get('date-range').textContent, '2027-01-21 — 2027-03-03');
+  assert.equal(page.calls.length, 1);
+});
+
+test('both Pages variants fail generically, reject the other field contract, and retry with a fresh HTTP read', async () => {
+  for (const [render, url, data] of [
+    [renderPublicEntry, DIRECT_PUBLIC_URL, createPreviewPayload(new Date('2026-12-21T04:00:00Z'))],
+    [renderTeamspaceEntry, DIRECT_TEAMSPACE_URL, sample()],
+  ]) {
+    const html = await render(url);
+    const page = await mount(html, data, { http: true, failInitially: true });
+    assert.equal(page.get('timeline-grid').hidden, true);
+    assert.equal(page.get('retry').hidden, false);
+    assert.equal(page.get('sync-status').textContent, '');
+    assert.doesNotMatch(page.document.querySelector('main').textContent, /PRIVATE_SOURCE_IDENTIFIER|C-901|虛構專案/);
+    assert.equal(page.calls.length, 1);
+    page.payload({ ...data, projects: data.projects.map((project) => ({ ...project, owner: 'Fictional updated owner' })) });
+    page.fail(false);
+    await page.click('retry');
+    assert.equal(page.get('timeline-grid').hidden, false);
+    assert.equal(page.get('retry').hidden, true);
+    assert.equal(page.calls.length, 2);
+    page.calls.forEach((call) => assertAnonymousRequest(call, url));
+    assert.notEqual(page.calls[0].options.signal, page.calls[1].options.signal);
+    const card = page.get('timeline-canvas').querySelectorAll('.project-card').find((node) => node.getAttribute('data-project-id') === data.projects[0].id);
+    await card.click();
+    assert.match(page.get('project-details').textContent, /Fictional updated owner/);
+    assert.deepEqual([...page.preferences.keys()], []);
+    const wrongContract = render === renderPublicEntry ? sample() : createPreviewPayload(new Date('2026-12-21T04:00:00Z'));
+    const denied = await mount(html, wrongContract, { http: true });
+    assert.equal(denied.get('timeline-grid').hidden, true);
+    assert.equal(denied.get('retry').hidden, false);
+    assert.doesNotMatch(denied.document.querySelector('main').textContent, /C-901|虛構專案/);
+    const serviceError = await mount(html, { error: 'PRIVATE_SERVICE_ERROR' }, { http: true });
+    assert.equal(serviceError.get('timeline-grid').hidden, true);
+    assert.doesNotMatch(serviceError.document.querySelector('main').textContent, /PRIVATE_SERVICE_ERROR/);
+  }
 });

@@ -17,10 +17,14 @@ function doGet(e) {
   try {
     if (arguments.length > 1) throw new Error('request');
     noParameters_(e);
-    return HtmlService.createHtmlOutputFromFile('Index').setTitle('PM Studio 團隊專案排程')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  } catch (error) { throw new Error(PM_INTERNAL_.error); }
+    return ContentService.createTextOutput(JSON.stringify(getTimeline()))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    try {
+      return ContentService.createTextOutput(JSON.stringify({ error: PM_INTERNAL_.error }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (outputError) { throw new Error(PM_INTERNAL_.error); }
+  }
 }
 
 function getTimeline() {
