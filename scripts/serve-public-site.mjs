@@ -11,14 +11,23 @@ export function createPublicPreviewHandler(directory) {
     try { path = new URL(request.url, 'http://127.0.0.1').pathname; }
     catch { response.writeHead(400); response.end(); return; }
     if (path === '/' || path === '/PM-Studio') { response.writeHead(302, { Location: '/PM-Studio/' }); response.end(); return; }
-    const files = { '/PM-Studio/': ['index.html', 'text/html; charset=utf-8'], '/PM-Studio/index.html': ['index.html', 'text/html; charset=utf-8'] };
+    if (path === '/PM-Studio/internal') { response.writeHead(302, { Location: '/PM-Studio/internal/' }); response.end(); return; }
+    const files = {
+      '/PM-Studio/': ['index.html', 'text/html; charset=utf-8'],
+      '/PM-Studio/index.html': ['index.html', 'text/html; charset=utf-8'],
+      '/PM-Studio/internal/': ['internal/index.html', 'text/html; charset=utf-8'],
+      '/PM-Studio/internal/index.html': ['internal/index.html', 'text/html; charset=utf-8'],
+    };
     const file = files[path];
     if (!file) { response.writeHead(404); response.end(); return; }
     try {
       const body = await readFile(resolve(root, file[0]));
       response.writeHead(200, { 'Content-Type': file[1], 'Content-Length': body.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       response.end(request.method === 'HEAD' ? undefined : body);
-    } catch { response.writeHead(503); response.end('無法讀取公開網站。'); }
+    } catch (error) {
+      if (file[0] === 'internal/index.html' && error.code === 'ENOENT') { response.writeHead(404); response.end(); return; }
+      response.writeHead(503); response.end('無法讀取公開網站。');
+    }
   };
 }
 

@@ -9,13 +9,21 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // where the native promises resolver cannot open a directory handle.
 const realpath = promisify(resolveFilesystemPath);
 
-export function validateAppUrl(value) {
+function validateExecutionUrl(value, setting) {
   // Match the original string: URL normalization must not admit credentials,
   // escaped characters, alternate ports, query strings, or a different origin.
   if (typeof value !== 'string' || /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,200}\/exec$/u.exec(value)?.[0] !== value) {
-    throw new Error('請以 PM_STUDIO_APP_URL 提供已驗證的 Google Apps Script 正式執行網址。');
+    throw new Error(`請以 ${setting} 提供已驗證的 Google Apps Script 正式執行網址。`);
   }
   return value;
+}
+
+export function validateAppUrl(value) {
+  return validateExecutionUrl(value, 'PM_STUDIO_APP_URL');
+}
+
+export function validateInternalAppUrl(value) {
+  return validateExecutionUrl(value, 'PM_STUDIO_INTERNAL_APP_URL');
 }
 
 export function renderPublicEntry(appUrl) {
@@ -36,6 +44,30 @@ export function renderPublicEntry(appUrl) {
 <body>
 <iframe id="schedule" src="${url}" title="PM Studio 專案排程" referrerpolicy="no-referrer"></iframe>
 <a class="open-schedule" href="${url}" target="_blank" rel="noopener noreferrer" aria-label="在新分頁開啟排程">另開排程 ↗</a>
+</body>
+</html>
+`;
+}
+
+export function renderInternalEntry(appUrl) {
+  const url = validateInternalAppUrl(appUrl);
+  return `<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="refresh" content="0;url=${url}">
+<title>PM Studio 內部排程</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#111518;color:#e8ecef}body{max-width:36rem;margin:15vh auto;padding:24px;line-height:1.6}a{display:inline-block;padding:10px 16px;border:1px solid #647078;border-radius:6px;color:#dce6ec;text-decoration:none}a:focus-visible{outline:3px solid #88cced;outline-offset:3px}
+</style>
+</head>
+<body>
+<h1>PM Studio 內部排程</h1>
+<p>正在開啟內部排程。請使用有主表存取權限的 Google 帳號登入。</p>
+<a href="${url}" rel="noreferrer">開啟內部排程</a>
 </body>
 </html>
 `;
@@ -71,7 +103,7 @@ async function workspaceTarget(outputDir, workspace) {
   return target;
 }
 
-async function validateOutputDirectory(outputDir, workspace, complete = false) {
+async function validateOutputDirectory(outputDir, workspace, complete = false, includeInternal = false) {
   requireContainedPath(workspace, outputDir);
   let info;
   try { info = await lstat(outputDir); }
@@ -80,10 +112,12 @@ async function validateOutputDirectory(outputDir, workspace, complete = false) {
   requireContainedPath(workspace, await realpath(outputDir));
   // Refuse unknown files instead of accidentally packaging an internal deployment.
   const entries = await readdir(outputDir, { withFileTypes: true });
-  const permitted = complete ? ['index.html', '.nojekyll'] : ['index.html', 'data', '.nojekyll'];
+  const permitted = complete
+    ? ['index.html', '.nojekyll', ...(includeInternal ? ['internal'] : [])]
+    : ['index.html', 'data', '.nojekyll', 'internal'];
   if (entries.some((entry) => !permitted.includes(entry.name)
-    || (entry.name === 'data' ? !entry.isDirectory() : !entry.isFile()))
-    || (complete && entries.length !== 2)) {
+    || (['data', 'internal'].includes(entry.name) ? !entry.isDirectory() : !entry.isFile()))
+    || (complete && entries.length !== 2 + Number(includeInternal))) {
     throw new Error('輸出資料夾含有未允許的檔案，請選擇獨立的公開網站資料夾。');
   }
   const dataPath = resolve(outputDir, 'data');
@@ -94,6 +128,16 @@ async function validateOutputDirectory(outputDir, workspace, complete = false) {
       throw new Error('公開資料資料夾含有未允許的檔案。');
     }
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (entries.some((entry) => entry.name === 'internal')) {
+    const internalPath = resolve(outputDir, 'internal');
+    const internalInfo = await lstat(internalPath);
+    if (internalInfo.isSymbolicLink() || !internalInfo.isDirectory()) throw new Error('內部入口不能使用符號連結或非資料夾。');
+    requireContainedPath(workspace, await realpath(internalPath));
+    const internalEntries = await readdir(internalPath, { withFileTypes: true });
+    if (internalEntries.length !== 1 || internalEntries[0].name !== 'index.html' || !internalEntries[0].isFile()) {
+      throw new Error('內部入口資料夾含有未允許的檔案。');
+    }
+  }
   return { exists: true, legacy: entries.some((entry) => entry.name === 'data') };
 }
 
@@ -112,11 +156,15 @@ async function removeOwnedDirectory(directory, workspace) {
 
 export async function buildPublicSite({
   appUrl = process.env.PM_STUDIO_APP_URL,
+  internalAppUrl = process.env.PM_STUDIO_INTERNAL_APP_URL,
   outputDir = resolve(root, 'local/public-site'),
   renderEntry = renderPublicEntry,
+  renderInternal = renderInternalEntry,
   installDirectory = rename,
 } = {}) {
   const verifiedUrl = validateAppUrl(appUrl);
+  const verifiedInternalUrl = internalAppUrl === undefined || internalAppUrl === ''
+    ? undefined : validateInternalAppUrl(internalAppUrl);
   const workspace = await realpath(root);
   const target = await workspaceTarget(resolve(outputDir), workspace);
   await validateOutputDirectory(target, workspace);
@@ -127,7 +175,11 @@ export async function buildPublicSite({
     requireContainedPath(workspace, await realpath(staging));
     await writeFile(resolve(staging, 'index.html'), await renderEntry(verifiedUrl), { flag: 'wx' });
     await writeFile(resolve(staging, '.nojekyll'), '', { flag: 'wx' });
-    await validateOutputDirectory(staging, workspace, true);
+    if (verifiedInternalUrl) {
+      await mkdir(resolve(staging, 'internal'));
+      await writeFile(resolve(staging, 'internal/index.html'), await renderInternal(verifiedInternalUrl), { flag: 'wx' });
+    }
+    await validateOutputDirectory(staging, workspace, true, Boolean(verifiedInternalUrl));
     // Validate again immediately before replacing a previously clean publication.
     const previous = await validateOutputDirectory(target, workspace);
     if (previous.exists) {

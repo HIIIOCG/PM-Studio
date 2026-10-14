@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile, readdir, rm, symlink } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildPublicSite, validateAppUrl, renderPublicEntry } from '../../scripts/build-public-site.mjs';
+import { buildPublicSite, validateAppUrl, validateInternalAppUrl, renderPublicEntry, renderInternalEntry } from '../../scripts/build-public-site.mjs';
 import { createPublicPreviewHandler } from '../../scripts/serve-public-site.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -11,6 +11,8 @@ const local = resolve(root, 'local');
 // Deliberately fictional; a real deployment address is supplied only at build time.
 const appUrl = 'https://script.google.com/macros/s/FICTIONAL_PM_STUDIO_TEST_001/exec';
 const updatedUrl = 'https://script.google.com/macros/s/FICTIONAL_PM_STUDIO_TEST_002/exec';
+const internalUrl = 'https://script.google.com/macros/s/FICTIONAL_PM_STUDIO_INTERNAL_001/exec';
+const updatedInternalUrl = 'https://script.google.com/macros/s/FICTIONAL_PM_STUDIO_INTERNAL_002/exec';
 
 async function temporaryDirectory(t) {
   await mkdir(local, { recursive: true });
@@ -40,6 +42,36 @@ test('only exact Google Apps Script production URLs are accepted', () => {
   ]) {
     assert.throws(() => validateAppUrl(invalid), /PM_STUDIO_APP_URL/);
   }
+});
+
+test('internal entry accepts only an exact Apps Script execution URL', () => {
+  assert.equal(validateInternalAppUrl(internalUrl), internalUrl);
+  for (const invalid of [
+    undefined, null, {}, '', 'javascript:alert(1)',
+    internalUrl.replace('https:', 'http:'),
+    internalUrl.replace('script.google.com', 'script.google.com.example.org'),
+    internalUrl.replace('script.google.com', 'user:secret@script.google.com'),
+    internalUrl.replace('script.google.com', 'script.google.com:443'),
+    internalUrl.replace('/exec', '/dev'),
+    internalUrl.replace('/macros/s/', '/macros/u/0/s/'),
+    internalUrl.replace('FICTIONAL', '%46ICTIONAL'),
+    `${internalUrl}/`, `${internalUrl}?mode=internal`, `${internalUrl}#internal`,
+    `${internalUrl}\n`, ` ${internalUrl}`, `${internalUrl} `,
+    `${internalUrl}" onload="alert(1)`, `${internalUrl}</a><script>alert(1)</script>`,
+    'https://docs.google.com/spreadsheets/d/FICTIONAL_PRIVATE_SOURCE/edit',
+  ]) {
+    assert.throws(() => validateInternalAppUrl(invalid), /PM_STUDIO_INTERNAL_APP_URL/);
+  }
+});
+
+test('invalid internal URLs are rejected before an existing publication changes', async (t) => {
+  const directory = await temporaryDirectory(t);
+  const outputDir = resolve(directory, 'site');
+  await buildPublicSite({ appUrl, internalAppUrl: internalUrl, outputDir });
+  const previousInternal = await readFile(resolve(outputDir, 'internal/index.html'), 'utf8');
+  await assert.rejects(buildPublicSite({ appUrl: updatedUrl, internalAppUrl: `${internalUrl}?source=PRIVATE`, outputDir }), /PM_STUDIO_INTERNAL_APP_URL/);
+  assert.equal(await readFile(resolve(outputDir, 'internal/index.html'), 'utf8'), previousInternal);
+  assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), renderPublicEntry(appUrl));
 });
 
 test('public build requires a valid URL and refuses private or unexpected output files', async (t) => {
@@ -84,6 +116,97 @@ test('the environment may supply the deployment URL without exposing it in the b
     if (previous === undefined) delete process.env.PM_STUDIO_APP_URL;
     else process.env.PM_STUDIO_APP_URL = previous;
   }
+});
+
+test('optional internal shortcut adds only its redirect page and leaves the public schedule unchanged', async (t) => {
+  const directory = await temporaryDirectory(t);
+  const outputDir = resolve(directory, 'site');
+  const result = await buildPublicSite({ appUrl, internalAppUrl: internalUrl, outputDir });
+  assert.deepEqual((await readdir(outputDir)).sort(), ['.nojekyll', 'index.html', 'internal']);
+  assert.deepEqual(await readdir(resolve(outputDir, 'internal')), ['index.html']);
+  assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), renderPublicEntry(appUrl));
+  const internalHtml = await readFile(resolve(outputDir, 'internal/index.html'), 'utf8');
+  assert.equal(internalHtml, renderInternalEntry(internalUrl));
+  assert.match(internalHtml, new RegExp(`<meta http-equiv="refresh" content="0;url=${internalUrl}">`.replaceAll('.', '\\.')));
+  assert.ok(internalHtml.includes(`<a href="${internalUrl}" rel="noreferrer">開啟內部排程</a>`));
+  assert.match(internalHtml, /有主表存取權限的 Google 帳號/);
+  assert.doesNotMatch(internalHtml, /<iframe|<script|fetch\(|google\.script|SOURCE_SHEET_ID|docs\.google\.com\/spreadsheets|projects|schedule\.json/);
+  assert.doesNotMatch(await readFile(resolve(outputDir, 'index.html'), 'utf8'), /internal|內部/);
+  assert.equal(JSON.stringify(result).includes(internalUrl), false);
+  await buildPublicSite({ appUrl, internalAppUrl: '', outputDir });
+  assert.deepEqual((await readdir(outputDir)).sort(), ['.nojekyll', 'index.html']);
+});
+
+test('internal URL can be supplied privately through the environment', async (t) => {
+  const directory = await temporaryDirectory(t);
+  const previous = process.env.PM_STUDIO_INTERNAL_APP_URL;
+  try {
+    process.env.PM_STUDIO_INTERNAL_APP_URL = internalUrl;
+    const result = await buildPublicSite({ appUrl, outputDir: resolve(directory, 'site') });
+    assert.equal(await readFile(resolve(result.outputDir, 'internal/index.html'), 'utf8'), renderInternalEntry(internalUrl));
+    assert.equal(JSON.stringify(result).includes(internalUrl), false);
+  } finally {
+    if (previous === undefined) delete process.env.PM_STUDIO_INTERNAL_APP_URL;
+    else process.env.PM_STUDIO_INTERNAL_APP_URL = previous;
+  }
+});
+
+test('internal generation and install failures restore both complete entry pages', async (t) => {
+  const directory = await temporaryDirectory(t);
+  const outputDir = resolve(directory, 'site');
+  await buildPublicSite({ appUrl, internalAppUrl: internalUrl, outputDir });
+  const originalInternal = await readFile(resolve(outputDir, 'internal/index.html'), 'utf8');
+  await assert.rejects(buildPublicSite({ appUrl: updatedUrl, internalAppUrl: updatedInternalUrl, outputDir,
+    renderInternal: async () => { throw new Error('Simulated internal generation failure'); },
+  }), /Simulated internal generation failure/);
+  assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), renderPublicEntry(appUrl));
+  assert.equal(await readFile(resolve(outputDir, 'internal/index.html'), 'utf8'), originalInternal);
+  await assert.rejects(buildPublicSite({ appUrl: updatedUrl, internalAppUrl: updatedInternalUrl, outputDir,
+    installDirectory: async () => { throw new Error('Simulated internal install failure'); },
+  }), /Simulated internal install failure/);
+  assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), renderPublicEntry(appUrl));
+  assert.equal(await readFile(resolve(outputDir, 'internal/index.html'), 'utf8'), originalInternal);
+  assert.deepEqual(await readdir(directory), ['site']);
+});
+
+test('internal entry directory rejects extra files and subdirectories', async (t) => {
+  const directory = await temporaryDirectory(t);
+  for (const kind of ['file', 'directory']) {
+    const outputDir = resolve(directory, kind);
+    await mkdir(resolve(outputDir, 'internal'), { recursive: true });
+    await writeFile(resolve(outputDir, 'index.html'), 'previous public entry');
+    await writeFile(resolve(outputDir, 'internal/index.html'), 'previous internal entry');
+    if (kind === 'file') await writeFile(resolve(outputDir, 'internal/Code.gs'), 'PRIVATE');
+    else await mkdir(resolve(outputDir, 'internal/private'));
+    await assert.rejects(buildPublicSite({ appUrl, internalAppUrl: internalUrl, outputDir }), /未允許/);
+    assert.equal(await readFile(resolve(outputDir, 'index.html'), 'utf8'), 'previous public entry');
+    assert.equal(await readFile(resolve(outputDir, 'internal/index.html'), 'utf8'), 'previous internal entry');
+  }
+});
+
+test('internal shortcut rejects linked directories and linked HTML files before replacement', async (t) => {
+  const directory = await temporaryDirectory(t);
+  const actual = resolve(directory, 'actual');
+  await mkdir(actual);
+  await writeFile(resolve(actual, 'index.html'), 'PRIVATE');
+  const linkedDirectorySite = resolve(directory, 'linked-directory-site');
+  await mkdir(linkedDirectorySite);
+  try { await symlink(actual, resolve(linkedDirectorySite, 'internal'), process.platform === 'win32' ? 'junction' : 'dir'); }
+  catch (error) {
+    if (['EPERM', 'EACCES'].includes(error.code)) { t.skip('Environment does not permit symlink creation.'); return; }
+    throw error;
+  }
+  await assert.rejects(buildPublicSite({ appUrl, internalAppUrl: internalUrl, outputDir: linkedDirectorySite }), /未允許|符號連結/);
+  assert.equal(await readFile(resolve(actual, 'index.html'), 'utf8'), 'PRIVATE');
+  const linkedFileSite = resolve(directory, 'linked-file-site');
+  await mkdir(resolve(linkedFileSite, 'internal'), { recursive: true });
+  try { await symlink(resolve(actual, 'index.html'), resolve(linkedFileSite, 'internal/index.html'), 'file'); }
+  catch (error) {
+    if (['EPERM', 'EACCES'].includes(error.code)) { t.diagnostic('Environment does not permit file symlink creation; directory junction rejection was verified.'); return; }
+    throw error;
+  }
+  await assert.rejects(buildPublicSite({ appUrl, internalAppUrl: internalUrl, outputDir: linkedFileSite }), /未允許/);
+  assert.equal(await readFile(resolve(actual, 'index.html'), 'utf8'), 'PRIVATE');
 });
 
 test('legacy snapshots are retained in a complete backup and absent from the new site', async (t) => {
@@ -195,6 +318,36 @@ test('preview serves the entry at the project path and rejects snapshot and priv
   assert.equal(head.body, undefined);
   assert.equal((await request('/PM-Studio/', 'POST')).status, 405);
   for (const path of ['/PM-Studio/data/schedule.json', '/PM-Studio/Code.gs', '/local/operations/config/sources.json', '/.git/config']) {
+    assert.equal((await request(path)).status, 404);
+  }
+  assert.equal((await request('/PM-Studio/internal/')).status, 404);
+});
+
+test('preview serves only the fixed internal shortcut routes and retains private-file rejection', async (t) => {
+  const directory = await temporaryDirectory(t);
+  const outputDir = resolve(directory, 'site');
+  await buildPublicSite({ appUrl, internalAppUrl: internalUrl, outputDir });
+  const handler = createPublicPreviewHandler(outputDir);
+  async function request(url, method = 'GET') {
+    const response = { status: null, headers: {}, body: undefined,
+      writeHead(status, headers = {}) { this.status = status; this.headers = headers; },
+      end(body) { this.body = body?.toString(); },
+    };
+    await handler({ url, method }, response);
+    return response;
+  }
+  const redirect = await request('/PM-Studio/internal');
+  assert.equal(redirect.status, 302);
+  assert.equal(redirect.headers.Location, '/PM-Studio/internal/');
+  for (const path of ['/PM-Studio/internal/', '/PM-Studio/internal/index.html']) {
+    const response = await request(path);
+    assert.equal(response.status, 200);
+    assert.equal(response.body, renderInternalEntry(internalUrl));
+    assert.equal(response.headers['X-Content-Type-Options'], 'nosniff');
+    assert.equal((await request(path, 'HEAD')).body, undefined);
+    assert.equal((await request(path, 'POST')).status, 405);
+  }
+  for (const path of ['/internal/', '/PM-Studio/internal/Code.gs', '/PM-Studio/internal/data/schedule.json', '/PM-Studio/internal/config/sources.json', '/PM-Studio/internal/%2e%2e/.git/config']) {
     assert.equal((await request(path)).status, 404);
   }
 });

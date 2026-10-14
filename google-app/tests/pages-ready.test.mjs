@@ -58,8 +58,9 @@ test('Pages workflow is manual, injects the Script URL from a secret and publish
   assert.doesNotMatch(workflow, /pull_request_target|schedule:|git push|ghpages|CNAME|repository:/);
   assert.match(workflow, /node-version: "24"/);
   assert.match(workflow, /PM_STUDIO_APP_URL: \$\{\{ secrets\.PM_STUDIO_APP_URL \}\}/);
+  assert.match(workflow, /PM_STUDIO_INTERNAL_APP_URL: \$\{\{ secrets\.PM_STUDIO_INTERNAL_APP_URL \}\}/);
   assert.match(workflow, /run: node scripts\/build-public-site\.mjs\r?\n/);
-  assert.doesNotMatch(workflow, /--snapshot|schedule\.json|script\.google\.com|PM_STUDIO_APP_URL.*(?:echo|console\.log)/);
+  assert.doesNotMatch(workflow, /--snapshot|schedule\.json|script\.google\.com|PM_STUDIO_(?:INTERNAL_)?APP_URL.*(?:echo|console\.log)/);
   assert.match(workflow, /path: local\/public-site\r?\n/);
   const guardAt = workflow.indexOf('Verify publishing prerequisites');
   const testsAt = workflow.indexOf('node --test ');

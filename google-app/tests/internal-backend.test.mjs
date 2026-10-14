@@ -1,0 +1,224 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
+
+const publicCode = await readFile(new URL('../Code.gs', import.meta.url), 'utf8');
+const adapterCode = await readFile(new URL('../internal/Code.gs', import.meta.url), 'utf8');
+const manifest = JSON.parse(await readFile(new URL('../internal/appsscript.json', import.meta.url), 'utf8'));
+const sharedCode = publicCode.replace(/^function doGet\(/m, 'function publicDoGet_(')
+  .replace(/^function getTimeline\(/m, 'function publicGetTimeline_(');
+const SOURCE_ID = 'FICTIONAL_INTERNAL_SOURCE_1234';
+const INTERNAL_ERROR = '無法讀取內部排程，請確認登入帳號具有專案列表存取權限。';
+const PUBLIC_ERROR = '排程目前無法讀取，請稍後重試。';
+const header = ['案號', '目前交付目標', '專案／範圍', '客戶', '負責人', '狀態', '原始開始', '原始結束',
+  '延長修正／補充', '交付步驟（參考）', '資料', '窗口', '執行者', '目前排程開始', '目前排程結束',
+  '修正開始', '修正結束', '客戶編號', '工作區 A 占用', '工作區 B 占用', '工作區 C 占用', '工作區 D 占用', '排程性質', '未結事項'];
+const defaults = {
+  '案號': 'C-001', '目前交付目標': 'FictionalGoal', '專案／範圍': 'FictionalProject', '客戶': 'FictionalCustomer',
+  '負責人': 'FictionalOwner', '執行者': 'FictionalExecutor', '窗口': 'FictionalContact',
+  '資料': 'https://private.example/source', '交付步驟（參考）': 'FictionalDelivery',
+  '狀態': '製作中', '客戶編號': 'V-01', '原始開始': '2026-01-01', '原始結束': '2026-02-28',
+  '目前排程開始': '2026-12-01', '目前排程結束': '2027-01-31', '工作區 A 占用': '1'
+};
+const privateKeys = ['name', 'customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps'];
+const plain = value => JSON.parse(JSON.stringify(value));
+const row = (changes = {}, columns = header) => columns.map(label => ({ ...defaults, ...changes })[label] ?? '');
+const fixedDate = class extends Date {
+  constructor(...args) { super(...(args.length ? args : ['2026-10-13T16:30:00.000Z'])); }
+};
+
+function setup(options = {}, code = sharedCode + '\n' + adapterCode) {
+  const state = { reads: [] };
+  const properties = options.properties ?? { SOURCE_SHEET_ID: SOURCE_ID };
+  const rows = options.values ?? [[], [], [], [], options.header ?? header, ...(options.rows ?? [row()])];
+  const context = vm.createContext({
+    Date: fixedDate,
+    PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ ...properties }) }) },
+    Sheets: { Spreadsheets: { Values: {
+      get(id, range, settings) {
+        state.reads.push({ id, range, settings: plain(settings) });
+        if (options.readError) throw new Error(options.readError);
+        return options.response ?? { values: rows };
+      }
+    } } },
+    Utilities: {
+      formatDate(date, timezone, format) {
+        assert.equal(timezone, 'Asia/Taipei'); assert.equal(format, 'yyyy-MM-dd');
+        return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+      }
+    },
+    HtmlService: {
+      XFrameOptionsMode: { ALLOWALL: 'ALLOWALL' },
+      createHtmlOutputFromFile(file) {
+        if (options.htmlError) throw new Error('PRIVATE_HTML_ERROR');
+        return { file, setTitle(value) { this.title = value; return this; },
+          addMetaTag(name, content) { this.meta = { name, content }; return this; },
+          setXFrameOptionsMode(value) { this.frame = value; return this; } };
+      }
+    }
+  });
+  vm.runInContext(code, context);
+  const rpc = (name, ...args) => {
+    if (name.endsWith('_') || typeof context[name] !== 'function') throw new Error('RPC unavailable');
+    return context[name](...args);
+  };
+  return { context, rpc, state, rows };
+}
+
+test('internal manifest requires sign-in and accessing-user execution with only Sheets read permission', () => {
+  assert.deepEqual(manifest.webapp, { executeAs: 'USER_ACCESSING', access: 'ANYONE' });
+  assert.deepEqual(manifest.oauthScopes, ['https://www.googleapis.com/auth/spreadsheets.readonly']);
+  assert.equal(manifest.timeZone, 'Asia/Taipei');
+  assert.equal(manifest.runtimeVersion, 'V8');
+  assert.deepEqual(manifest.dependencies.enabledAdvancedServices, [{ userSymbol: 'Sheets', version: 'v4', serviceId: 'sheets' }]);
+});
+
+test('one current source read returns the schedule plus the exact internal text allowlist', () => {
+  const env = setup();
+  const payload = plain(env.rpc('getTimeline'));
+  const base = plain(setup({}, publicCode).rpc('getTimeline'));
+  assert.deepEqual(Object.keys(payload).sort(), Object.keys(base).sort());
+  assert.equal(payload.schemaVersion, 3);
+  assert.equal(payload.today, '2026-10-14');
+  assert.equal(payload.syncedAt, '2026-10-13T16:30:00.000Z');
+  assert.deepEqual(env.state.reads, [{ id: SOURCE_ID, range: "'專案列表'", settings: { majorDimension: 'ROWS', valueRenderOption: 'FORMATTED_VALUE' } }]);
+  assert.deepEqual(payload.projects[0], {
+    ...base.projects[0], name: 'FictionalProject', customer: 'FictionalCustomer', owner: 'FictionalOwner',
+    status: '製作中', deliveryGoal: 'FictionalGoal', notes: '', contact: 'FictionalContact',
+    assignee: 'FictionalExecutor', deliverySteps: 'FictionalDelivery'
+  });
+  assert.doesNotMatch(JSON.stringify(payload), /private\.example|FICTIONAL_INTERNAL_SOURCE|sourceUrl|rawRow|properties|originalStart/);
+});
+
+test('permission-denied and revoked sharing fail generically without any cached or deployer fallback', () => {
+  const denied = setup({ readError: '403 Permission denied ' + SOURCE_ID + ' https://private.example/source FictionalCustomer' });
+  assert.throws(() => denied.rpc('getTimeline'), { message: INTERNAL_ERROR });
+  assert.equal(denied.state.reads.length, 1);
+  const allowed = setup();
+  assert.equal(allowed.rpc('getTimeline').projects[0].name, 'FictionalProject');
+  // A subsequent request must read Sheets again so a prior successful response
+  // cannot replace the accessing account's current source permissions.
+  allowed.context.Sheets.Spreadsheets.Values.get = () => { throw new Error('403 revoked sharing PRIVATE_SOURCE'); };
+  assert.throws(() => allowed.rpc('getTimeline'), { message: INTERNAL_ERROR });
+});
+
+test('every successful request rereads the main sheet and sees current changes', () => {
+  const env = setup();
+  assert.equal(env.rpc('getTimeline').projects[0].name, 'FictionalProject');
+  env.rows[5][header.indexOf('專案／範圍')] = 'FictionalUpdatedProject';
+  assert.equal(env.rpc('getTimeline').projects[0].name, 'FictionalUpdatedProject');
+  assert.equal(env.state.reads.length, 2);
+});
+
+test('internal data shares public date, correction, pending, reservation, follow-up and allocation semantics', () => {
+  const scenarios = [
+    {},
+    { '目前排程開始': '2027-04', '目前排程結束': '2027-06', '排程性質': '時段預約', '工作區 A 占用': '5' },
+    { '目前排程開始': '', '目前排程結束': '', '延長修正／補充': '改期，日期待確認' },
+    { '目前排程開始': '', '目前排程結束': '', '延長修正／補充': '' },
+    { '目前排程開始': '2027-02', '目前排程結束': '2027-01', '工作區 A 占用': '不確定' },
+    { '延長修正／補充': '原期後持續修正；新終點待定', '未結事項': '已處理' },
+    { '延長修正／補充': '原期後持續修正；新終點待定', '未結事項': '待收款中、客戶確認中' },
+    { '未結事項': '待收款中、私人文字', '排程性質': '未知類型' },
+    { '修正開始': '2027-03', '修正結束': '2027-04', '工作區 A 占用': '', '工作區 C 占用': '3' },
+    { '修正開始': '2027-03', '修正結束': '', '未結事項': '客戶確認中' }
+  ];
+  for (const changes of scenarios) {
+    const options = { rows: [row(changes)] };
+    const internal = plain(setup(options).rpc('getTimeline'));
+    for (const project of internal.projects) for (const key of privateKeys) delete project[key];
+    assert.deepEqual(internal, plain(setup(options, publicCode).rpc('getTimeline')));
+  }
+});
+
+test('private fields attach by project ID when invalid source rows are skipped and headers move', () => {
+  const columns = [...header, '私人設定'].reverse();
+  const options = { header: columns, rows: [
+    row({ '案號': 'INVALID_PRIVATE_ID', '專案／範圍': 'SkippedProject' }, columns),
+    row({ '案號': 'BG-002', '專案／範圍': 'BackgroundProject', '工作區 C 占用': '2', '私人設定': 'PRIVATE_SETTINGS' }, columns),
+    row({ '案號': 'C-001', '專案／範圍': 'CharacterProject' }, columns)
+  ] };
+  const payload = plain(setup(options).rpc('getTimeline'));
+  assert.deepEqual(payload.projects.map(project => [project.id, project.name]), [['BG-002', 'BackgroundProject'], ['C-001', 'CharacterProject']]);
+  assert.deepEqual(payload.warnings, ['project-id-invalid']);
+  assert.doesNotMatch(JSON.stringify(payload), /PRIVATE|SkippedProject|private\.example/);
+});
+
+test('empty optional internal columns return empty text and older W/X headers retain the shared migration behavior', () => {
+  const columns = header.filter(label => !['專案／範圍', '客戶', '負責人', '狀態', '目前交付目標', '窗口', '執行者', '交付步驟（參考）', '排程性質', '未結事項'].includes(label));
+  const payload = plain(setup({ header: columns, rows: [row({}, columns)] }).rpc('getTimeline'));
+  assert.ok(privateKeys.every(key => payload.projects[0][key] === ''));
+  assert.equal(payload.projects[0].scheduleKind, 'production');
+  assert.deepEqual(payload.projects[0].followUp, []);
+  assert.deepEqual(payload.projects[0].pendingReasons, []);
+});
+
+test('internal free text is bounded while preserving plain text and valid Unicode at the boundary', () => {
+  const changes = {
+    '專案／範圍': '  <script>Fictional</script>  ',
+    '客戶': 'x'.repeat(5000), '負責人': 'x'.repeat(3999) + '😀',
+    '延長修正／補充': '  第一行\n第二行  '
+  };
+  const item = setup({ rows: [row(changes)] }).rpc('getTimeline').projects[0];
+  assert.equal(item.name, '<script>Fictional</script>');
+  assert.equal(item.customer.length, 4000);
+  assert.equal(item.owner.length, 3999);
+  assert.equal(item.notes, '第一行\n第二行');
+  assert.ok(privateKeys.every(key => typeof item[key] === 'string' && item[key].length <= 4000));
+});
+
+test('invalid headers, duplicate project IDs and malformed/oversized source fail without partial private output', () => {
+  const oversized = [[], [], [], [], header, ...Array.from({ length: 996 }, () => [])];
+  for (const options of [
+    { header: [...header, '案號'] }, { header: header.filter(label => label !== '客戶編號') },
+    { rows: [row(), row()] }, { response: {} }, { values: [] }, { values: oversized },
+    { header: [...header, ...Array(43).fill('')] }
+  ]) assert.throws(() => setup(options).rpc('getTimeline'), { message: INTERNAL_ERROR });
+  assert.deepEqual(plain(setup({ rows: [] }).rpc('getTimeline').projects), []);
+});
+
+test('source properties and client-supplied parameters cannot select another source or bypass reads', () => {
+  for (const properties of [{}, { SOURCE_SHEET_ID: '' }, { SOURCE_SHEET_ID: 'tiny' }, { SOURCE_SHEET_ID: SOURCE_ID, INTERNAL_SECRET: 'PRIVATE' }]) {
+    const env = setup({ properties });
+    assert.throws(() => env.rpc('getTimeline'), { message: INTERNAL_ERROR });
+    assert.equal(env.state.reads.length, 0);
+  }
+  for (const argument of [undefined, null, {}, SOURCE_ID, { source: SOURCE_ID }, { rows: [row()] }, { id: 'C-001' }]) {
+    const env = setup();
+    assert.throws(() => env.rpc('getTimeline', argument), { message: INTERNAL_ERROR });
+    assert.equal(env.state.reads.length, 0);
+  }
+});
+
+test('internal HTML contains no source read and retains Google default iframe protection', () => {
+  const env = setup();
+  const html = env.rpc('doGet', { queryString: '', parameter: {}, parameters: {}, pathInfo: '' });
+  assert.equal(html.file, 'Index'); assert.equal(html.title, 'PM Studio 內部排程');
+  assert.ok(!Object.hasOwn(html, 'frame'));
+  assert.deepEqual(plain(html.meta), { name: 'viewport', content: 'width=device-width, initial-scale=1' });
+  assert.equal(env.state.reads.length, 0);
+  for (const event of [{ queryString: 'mode=internal' }, { parameter: { source: '' } }, { parameters: { source: [''] } }, { pathInfo: 'internal' }, { postData: {} }, 'internal']) {
+    assert.throws(() => env.rpc('doGet', event), { message: INTERNAL_ERROR });
+  }
+  assert.throws(() => env.rpc('doGet', {}, {}), { message: INTERNAL_ERROR });
+  assert.throws(() => setup({ htmlError: true }).rpc('doGet'), { message: INTERNAL_ERROR });
+  assert.doesNotMatch(adapterCode, /ALLOWALL|setXFrameOptionsMode/);
+});
+
+test('the bundled RPC surface has only the internal read endpoints and no credential/write/cache APIs', () => {
+  const functions = [...(sharedCode + '\n' + adapterCode).matchAll(/^function (\w+)\(/gm)].map(match => match[1]);
+  assert.deepEqual(functions.filter(name => !name.endsWith('_')), ['doGet', 'getTimeline']);
+  const env = setup();
+  for (const name of ['publicDoGet_', 'publicGetTimeline_', 'publicRows_', 'internalRows_', 'internalText_', 'doPost', 'saveLayout', 'publishApprovedSnapshot']) {
+    assert.throws(() => env.rpc(name), /unavailable/);
+  }
+  assert.doesNotMatch(adapterCode, /SpreadsheetApp|DriveApp|Session\.|LockService|CacheService|setValues|appendRow|batchUpdate|Values\.update|setProperty|UrlFetchApp|ScriptApp|Logger|console\./);
+});
+
+test('the original public backend still excludes every internal field and preserves its generic failures', () => {
+  const payload = plain(setup({}, publicCode).rpc('getTimeline'));
+  assert.ok(privateKeys.every(key => !Object.hasOwn(payload.projects[0], key)));
+  assert.doesNotMatch(JSON.stringify(payload), /FictionalProject|FictionalCustomer|FictionalGoal|FictionalOwner|FictionalContact|FictionalDelivery|FictionalExecutor|private\.example/);
+  assert.throws(() => setup({ readError: 'PRIVATE_ERROR' }, publicCode).rpc('getTimeline'), { message: PUBLIC_ERROR });
+});
