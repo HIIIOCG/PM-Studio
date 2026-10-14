@@ -22,6 +22,7 @@ const defaults = {
   '目前排程開始': '2026-12-01', '目前排程結束': '2027-01-31', '工作區 A 占用': '1'
 };
 const privateKeys = ['name', 'customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps'];
+const internalOnlyKeys = ['name', 'customer', 'contact', 'assignee'];
 const plain = value => JSON.parse(JSON.stringify(value));
 const row = (changes = {}, columns = header) => columns.map(label => ({ ...defaults, ...changes })[label] ?? '');
 const fixedDate = class extends Date {
@@ -127,6 +128,7 @@ test('internal data shares public date, correction, pending, reservation, follow
   for (const changes of scenarios) {
     const options = { rows: [row(changes)] };
     const internal = plain(setup(options).rpc('getTimeline'));
+    for (const project of internal.projects) for (const key of internalOnlyKeys) delete project[key];
     assert.deepEqual(internal, plain(setup(options, publicCode).rpc('getTimeline')));
   }
 });
@@ -216,11 +218,14 @@ test('the bundled RPC surface has only the internal read endpoints and no creden
   assert.doesNotMatch(adapterCode, /SpreadsheetApp|DriveApp|Session\.|LockService|CacheService|setValues|appendRow|batchUpdate|Values\.update|setProperty|UrlFetchApp|ScriptApp|Logger|console\./);
 });
 
-test('both latest backends expose identical authorized text fields and preserve source exclusions and generic failures', () => {
+test('public omits the four teamspace-only fields while teamspace preserves its complete authorized details', () => {
   const payload = plain(setup({}, publicCode).rpc('getTimeline'));
-  assert.ok(privateKeys.every(key => Object.hasOwn(payload.projects[0], key)));
-  assert.deepEqual(payload, plain(setup().rpc('getTimeline')));
+  for (const key of internalOnlyKeys) assert.ok(!Object.hasOwn(payload.projects[0], key));
+  const internal = plain(setup().rpc('getTimeline'));
+  assert.ok(privateKeys.every(key => Object.hasOwn(internal.projects[0], key)));
+  for (const project of internal.projects) for (const key of internalOnlyKeys) delete project[key];
+  assert.deepEqual(payload, internal);
   assert.equal(payload.projects[0].customerType, 'VTuber公司');
-  assert.doesNotMatch(JSON.stringify(payload), /private\.example|FICTIONAL_INTERNAL_SOURCE|sourceUrl|rawRow/);
+  assert.doesNotMatch(JSON.stringify(payload), /FictionalProject|FictionalCustomer|FictionalContact|FictionalExecutor|private\.example|FICTIONAL_INTERNAL_SOURCE|sourceUrl|rawRow/);
   assert.throws(() => setup({ readError: 'PRIVATE_ERROR' }, publicCode).rpc('getTimeline'), { message: PUBLIC_ERROR });
 });

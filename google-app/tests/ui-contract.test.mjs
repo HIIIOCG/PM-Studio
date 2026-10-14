@@ -27,7 +27,7 @@ test('single public contract preserves IDs, codes, four workspaces, and flexible
   for (const field of PROJECT_DETAIL_FIELDS) assert.equal(result.projects[0][field], source.projects[0][field]);
 });
 test('client contract rejects non-allowlisted fields, unknown reasons, and malformed allocations', () => {
-  for (const field of ['goal','sourceLinks','sourceUrl','originalRow','sourceId','alias']) {
+  for (const field of ['name','customer','contact','assignee','goal','sourceLinks','sourceUrl','originalRow','sourceId','alias']) {
     const data = payload(); data.projects[0][field] = 'PRIVATE';
     assert.throws(() => normalizeTimelinePayload(data));
   }
@@ -49,6 +49,8 @@ test('client contract rejects non-allowlisted fields, unknown reasons, and malfo
   assert.throws(() => normalizeTimelinePayload(duplicate));
 });
 test('public detail text and client types remain explicit, bounded, and required', () => {
+  assert.deepEqual(PROJECT_DETAIL_FIELDS, ['owner', 'status', 'deliveryGoal', 'notes', 'deliverySteps']);
+  for (const field of ['name', 'customer', 'contact', 'assignee']) assert.ok(!Object.hasOwn(payload().projects[0], field));
   for (const field of PROJECT_DETAIL_FIELDS) {
     const missing = payload(); delete missing.projects[0][field]; assert.throws(() => normalizeTimelinePayload(missing));
     for (const value of [null, {}, 1, 'x'.repeat(4001)]) { const bad = payload(); bad.projects[0][field] = value; assert.throws(() => normalizeTimelinePayload(bad)); }

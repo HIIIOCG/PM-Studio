@@ -5,9 +5,8 @@ const PM_SCHEDULE_ = Object.freeze({
   textLimit: 4000,
   customerTypes: Object.freeze(['VTuber個人', 'VTuber公司', '遊戲公司', '其他']),
   fields: Object.freeze({
-    name: '專案／範圍', customer: '客戶', owner: '負責人', status: '狀態',
-    deliveryGoal: '目前交付目標', notes: '延長修正／補充', contact: '窗口',
-    assignee: '執行者', deliverySteps: '交付步驟（參考）'
+    owner: '負責人', status: '狀態', deliveryGoal: '目前交付目標',
+    notes: '延長修正／補充', deliverySteps: '交付步驟（參考）'
   }),
   workspaces: [
     { id: 'A', name: '工作區 A', usualLoad: 2 },

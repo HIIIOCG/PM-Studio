@@ -10,8 +10,8 @@ const header = ['案號', '目前交付目標', '專案／範圍', '客戶', '�
   '延長修正／補充', '交付步驟（參考）', '資料', '窗口', '執行者', '目前排程開始', '目前排程結束',
   '修正開始', '修正結束', '客戶編號', '客戶類型', '工作區 A 占用', '工作區 B 占用', '工作區 C 占用', '工作區 D 占用', '排程性質', '未結事項'];
 const defaults = {
-  '案號': 'C-001', '目前交付目標': 'FictionalGoal', '專案／範圍': 'FictionalProject', '客戶': 'FictionalCustomer',
-  '負責人': 'FictionalOwner', '執行者': 'FictionalExecutor', '窗口': 'FictionalContact',
+  '案號': 'C-001', '目前交付目標': 'FictionalGoal', '專案／範圍': 'PrivateProject', '客戶': 'PrivateCustomer',
+  '負責人': 'FictionalOwner', '執行者': 'PrivateExecutor', '窗口': 'PrivateContact',
   '資料': 'https://private.example/source', '交付步驟（參考）': 'FictionalDelivery',
   '狀態': '製作中', '客戶編號': 'V-01', '客戶類型': 'VTuber個人', '原始開始': '2026-01-01', '原始結束': '2026-02-28',
   '目前排程開始': '2026-12-01', '目前排程結束': '2027-01-31', '工作區 A 占用': '1'
@@ -74,10 +74,9 @@ test('single read uses formatted source values and returns only the exact public
     id: 'C-001', customerCode: 'V-01', customerType: 'VTuber個人', start: '2026-12-01', end: '2027-01-31', correctionStart: '', correctionEnd: '',
     scheduleKind: 'production', followUp: [],
     workspaceIds: ['A'], workspaceUnits: { A: 1 }, pendingReasons: [],
-    name: 'FictionalProject', customer: 'FictionalCustomer', owner: 'FictionalOwner', status: '製作中',
-    deliveryGoal: 'FictionalGoal', notes: '', contact: 'FictionalContact', assignee: 'FictionalExecutor', deliverySteps: 'FictionalDelivery'
+    owner: 'FictionalOwner', status: '製作中', deliveryGoal: 'FictionalGoal', notes: '', deliverySteps: 'FictionalDelivery'
   });
-  assert.doesNotMatch(JSON.stringify(payload), /private\.example|FICTIONAL_SOURCE|sourceUrl|externalAlias|approved|originalStart/);
+  assert.doesNotMatch(JSON.stringify(payload), /PrivateProject|PrivateCustomer|PrivateExecutor|PrivateContact|private\.example|FICTIONAL_SOURCE|sourceUrl|externalAlias|approved|originalStart/);
 });
 
 test('all 24 fictional projects remain present across statuses, missing dates and unassigned workspaces', () => {
@@ -100,12 +99,12 @@ test('source columns are selected explicitly and invalid restricted values never
   const payload = plain(setup({ rows: [row(changes)] }).rpc('getTimeline'));
   assert.equal(payload.projects.length, 1);
   const item = payload.projects[0];
-  const detailFields = ['name', 'customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps'];
+  const detailFields = ['owner', 'status', 'deliveryGoal', 'notes', 'deliverySteps'];
   const base = Object.fromEntries(Object.entries(item).filter(([key]) => !detailFields.includes(key)));
   assert.doesNotMatch(JSON.stringify(base), /Secret|private|目前|客戶|修正|https|@/);
-  assert.equal(item.name, changes['專案／範圍']);
+  assert.equal(item.status, changes['狀態']);
   assert.equal(item.notes, changes['延長修正／補充']);
-  assert.ok(!JSON.stringify(item).includes(changes['資料']));
+  for (const label of ['專案／範圍', '客戶', '窗口', '執行者', '資料']) assert.ok(!JSON.stringify(item).includes(changes[label]));
   assert.equal(payload.projects[0].customerCode, '');
   assert.equal(payload.projects[0].start, '');
   assert.equal(payload.projects[0].end, '');
@@ -135,13 +134,27 @@ test('customer types accept only four confirmed labels while blank and missing c
 
 test('authorized public details are plain bounded text without source-link or raw-row fields', () => {
   const item = project({
-    '專案／範圍': '  <script>Fictional</script>  ', '客戶': 'x'.repeat(5000),
+    '目前交付目標': '  <script>Fictional</script>  ', '狀態': 'x'.repeat(5000),
     '負責人': 'x'.repeat(3999) + '😀', '延長修正／補充': '  第一行\n第二行  '
   });
-  assert.equal(item.name, '<script>Fictional</script>');
-  assert.equal(item.customer.length, 4000); assert.equal(item.owner.length, 3999);
+  assert.equal(item.deliveryGoal, '<script>Fictional</script>');
+  assert.equal(item.status.length, 4000); assert.equal(item.owner.length, 3999);
   assert.equal(item.notes, '第一行\n第二行');
   assert.doesNotMatch(JSON.stringify(item), /private\.example|sourceUrl|rawRow/);
+});
+
+test('all public projects omit project and customer names, contact and assignee before reaching the browser', () => {
+  const changes = [
+    { '案號': 'C-001', '專案／範圍': 'PrivateNameOne', '客戶': 'PrivateCustomerOne', '窗口': 'PrivateContactOne', '執行者': 'PrivateAssigneeOne' },
+    { '案號': 'BG-002', '專案／範圍': 'PrivateNameTwo', '客戶': 'PrivateCustomerTwo', '窗口': 'PrivateContactTwo', '執行者': 'PrivateAssigneeTwo', '工作區 A 占用': '' }
+  ];
+  const payload = plain(setup({ rows: changes.map(values => row(values)) }).rpc('getTimeline'));
+  assert.equal(payload.projects.length, 2);
+  for (const item of payload.projects) {
+    for (const key of ['name', 'customer', 'contact', 'assignee']) assert.ok(!Object.hasOwn(item, key));
+    assert.equal(item.owner, 'FictionalOwner'); assert.equal(item.deliveryGoal, 'FictionalGoal');
+  }
+  assert.doesNotMatch(JSON.stringify(payload), /PrivateName|PrivateCustomer|PrivateContact|PrivateAssignee/);
 });
 
 test('customer codes retain leading zeroes and invalid or missing codes stay pending', () => {

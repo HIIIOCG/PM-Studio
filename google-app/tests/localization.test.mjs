@@ -226,24 +226,26 @@ test('single-day bars are native keyboard buttons with full details on activatio
   await page.click('close-project-details');
   assert.equal(page.get('project-details').open, false);
 });
-test('public details show authorized project text and client type after code as text on timeline and pending records', async(t) => {
+test('public details show the five authorized text fields and client type without project/customer names or contact/assignee rows', async(t) => {
   const html = await fixture(t), value = sample();
-  const project = { ...value.projects[0], name: 'Fictional <img src=x onerror=alert(1)> project', notes: '<script>FICTIONAL_TEXT</script>\nSecond line',
+  const project = { ...value.projects[0], notes: '<script>FICTIONAL_TEXT</script>\nSecond line',
     start: value.today, end: value.today, correctionStart: '', correctionEnd: '', workspaceIds: ['A'], workspaceUnits: { A: 1 }, pendingReasons: [] };
   value.projects = [project];
   const page = await mount(html, value, { width: 212 });
   const card = page.get('timeline-canvas').querySelector('.project-card');
   assert.match(card.textContent, /C-901客戶 TEST-01 · VTuber個人/);
-  assert.doesNotMatch(card.textContent, /Fictional <img/);
+  assert.doesNotMatch(card.textContent, /Fictional project|Fictional client/);
   await card.click();
   const dialog = page.get('project-details');
-  assert.match(dialog.textContent, /客戶 TEST-01客戶類型VTuber個人客戶/);
-  for (const field of ['name', 'customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps']) assert.ok(dialog.textContent.includes(project[field]), field);
+  assert.equal(page.get('project-details-title').textContent, 'C-901');
+  assert.match(dialog.textContent, /客戶 TEST-01客戶類型VTuber個人負責人/);
+  for (const field of ['owner', 'status', 'deliveryGoal', 'notes', 'deliverySteps']) assert.ok(dialog.textContent.includes(project[field]), field);
+  assert.deepEqual(dialog.querySelectorAll('dt').map((field) => field.textContent), ['客戶類型', '負責人', '狀態', '目前交付目標', '延長修正／補充', '交付步驟（參考）']);
   assert.equal(dialog.querySelectorAll('img,script').length, 0);
   await page.click('close-project-details');
   await page.click('language-toggle');
   await page.get('timeline-canvas').querySelector('.project-card').click();
-  assert.match(dialog.textContent, /Client TEST-01Client typeIndividual VTuberClient/);
+  assert.match(dialog.textContent, /Client TEST-01Client typeIndividual VTuberOwner/);
   assert.match(dialog.textContent, /Owner.*Status.*Current delivery goal.*Revision \/ additional notes/);
   const pendingValue = sample();
   pendingValue.projects = [{ ...project, customerType: '', workspaceIds: [], workspaceUnits: {}, pendingReasons: ['no-workspace'] }];

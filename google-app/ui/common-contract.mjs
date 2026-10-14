@@ -1,6 +1,6 @@
 export const PENDING_REASONS = Object.freeze(['no-workspace', 'workspace-values', 'production-dates', 'correction-dates', 'customer-code', 'customer-type', 'schedule-kind', 'follow-up-values']);
 export const CUSTOMER_TYPES = Object.freeze(['VTuber個人', 'VTuber公司', '遊戲公司', '其他']);
-export const PROJECT_DETAIL_FIELDS = Object.freeze(['name', 'customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps']);
+export const PROJECT_DETAIL_FIELDS = Object.freeze(['owner', 'status', 'deliveryGoal', 'notes', 'deliverySteps']);
 export const SCHEDULE_WARNINGS = Object.freeze(['project-id-missing', 'project-id-invalid']);
 export const SCHEDULE_KINDS = Object.freeze(['production', 'reservation']);
 export const FOLLOW_UP_STATUSES = Object.freeze(['customer-confirmation', 'payment']);

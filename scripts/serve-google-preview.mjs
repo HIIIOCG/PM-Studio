@@ -22,8 +22,8 @@ export function createPreviewPayload(now = new Date()) {
   let projectIndex = 0;
   const project = (id, customerCode, start, end, workspaceUnits, correctionStart = '', correctionEnd = '', pendingReasons = []) =>
     ({ id, customerCode, customerType: customerTypes[projectIndex++ % customerTypes.length],
-      name: 'Fictional project ' + id, customer: 'Fictional client', owner: 'Fictional owner', status: 'Fictional status',
-      deliveryGoal: 'Fictional delivery goal', notes: 'Fictional notes\nSecond line', contact: 'Fictional contact', assignee: 'Fictional assignee', deliverySteps: 'Fictional delivery steps',
+      owner: 'Fictional owner', status: 'Fictional status',
+      deliveryGoal: 'Fictional delivery goal', notes: 'Fictional notes\nSecond line', deliverySteps: 'Fictional delivery steps',
       start, end, correctionStart, correctionEnd, workspaceIds: Object.keys(workspaceUnits), workspaceUnits, pendingReasons, scheduleKind: 'production', followUp: [] });
   return {
     schemaVersion: 3, today, syncedAt: now.toISOString(),

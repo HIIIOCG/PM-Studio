@@ -47,7 +47,7 @@ test('schema 3 refuses older versions, missing new keys and unknown free-form st
 test('new source-data issues use fixed pending codes and public detail rejects unauthorized fields', () => {
   const source = payload(); source.projects[0].pendingReasons = ['schedule-kind', 'follow-up-values', 'customer-type'];
   assert.deepEqual(normalizeTimelinePayload(source).projects[0].pendingReasons, ['schedule-kind', 'follow-up-values', 'customer-type']);
-  for (const key of ['followUpNote', 'paymentAmount', 'customerName', 'sourceUrl', '資料', 'rawRow', 'settings']) {
+  for (const key of ['name', 'customer', 'contact', 'assignee', 'followUpNote', 'paymentAmount', 'customerName', 'sourceUrl', '資料', 'rawRow', 'settings']) {
     const privateSource = payload(); privateSource.projects[0][key] = 'SecretValue';
     assert.throws(() => normalizeTimelinePayload(privateSource));
   }
@@ -55,6 +55,7 @@ test('new source-data issues use fixed pending codes and public detail rejects u
 
 test('both customer-type values and bounded project detail fields are validated explicitly', () => {
   assert.deepEqual(CUSTOMER_TYPES, ['VTuber個人', 'VTuber公司', '遊戲公司', '其他']);
+  assert.deepEqual(PROJECT_DETAIL_FIELDS, ['owner', 'status', 'deliveryGoal', 'notes', 'deliverySteps']);
   for (const customerType of ['', ...CUSTOMER_TYPES]) {
     const source = payload(); source.projects[0].customerType = customerType;
     assert.equal(normalizeTimelinePayload(source).projects[0].customerType, customerType);

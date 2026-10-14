@@ -76,13 +76,14 @@ async function mount(html, data, { width = 900, failInitially = false } = {}) {
   return { document, get, calls, preferences, click(id) { return get(id).click(); }, fail(value) { fail = value; }, payload(value) { payload = value; }, resize(value) { width = value; onResize(); } };
 }
 
-test('teamspace and public share the same explicit bounded detail contract', () => {
+test('teamspace preserves nine bounded detail fields while public rejects team-only fields', () => {
   const source = sample(), original = JSON.stringify(source);
   const result = normalizeInternalTimelinePayload(source);
   assert.equal(result.projects[0].name, '虛構專案 C-901');
   assert.equal(result.projects[0].notes, '虛構補充\n第二行');
   assert.equal(JSON.stringify(source), original);
-  assert.deepEqual(normalizeTimelinePayload(source), result);
+  assert.throws(() => normalizeTimelinePayload(source));
+  assert.equal(normalizeTimelinePayload(createPreviewPayload(new Date('2026-12-21T04:00:00Z'))).projects[0].owner, 'Fictional owner');
   for (const field of INTERNAL_PROJECT_FIELDS) {
     const missing = sample(); delete missing.projects[0][field]; assert.throws(() => normalizeInternalTimelinePayload(missing));
     for (const value of [null, {}, 1, 'x'.repeat(4001)]) { const bad = sample(); bad.projects[0][field] = value; assert.throws(() => normalizeInternalTimelinePayload(bad)); }

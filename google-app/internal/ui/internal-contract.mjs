@@ -1,9 +1,23 @@
-import { normalizeTimelinePayload, PROJECT_DETAIL_FIELDS } from '../../ui/common-contract.mjs';
+import { normalizeTimelinePayload } from '../../ui/common-contract.mjs';
 
-export const INTERNAL_PROJECT_FIELDS = PROJECT_DETAIL_FIELDS;
+export const INTERNAL_ONLY_PROJECT_FIELDS = Object.freeze(['name', 'customer', 'contact', 'assignee']);
+export const INTERNAL_PROJECT_FIELDS = Object.freeze(['name', 'customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps']);
 
-// Both authorized reading views share the same bounded text contract.
-// Source links, settings and original rows are never accepted.
+// Teamspace adds only its four explicit text fields to the public schedule.
+// Shared text, dates and enums retain the strict common validation; source links,
+// settings and original rows are never accepted in either contract.
 export function normalizeInternalTimelinePayload(payload) {
-  return normalizeTimelinePayload(payload);
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.projects)) throw new Error('Invalid internal schedule.');
+  const extras = payload.projects.map((project) => {
+    if (!project || typeof project !== 'object' || Array.isArray(project)) throw new Error('Invalid internal project.');
+    const fields = {};
+    for (const key of INTERNAL_ONLY_PROJECT_FIELDS) {
+      if (!Object.hasOwn(project, key) || typeof project[key] !== 'string' || project[key].length > 4000) throw new Error('Invalid internal project text.');
+      fields[key] = project[key];
+    }
+    return fields;
+  });
+  const publicProjects = payload.projects.map((project) => Object.fromEntries(Object.entries(project).filter(([key]) => !INTERNAL_ONLY_PROJECT_FIELDS.includes(key))));
+  const schedule = normalizeTimelinePayload({ ...payload, projects: publicProjects });
+  return { ...schedule, projects: schedule.projects.map((project, index) => ({ ...project, ...extras[index] })) };
 }

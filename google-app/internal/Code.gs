@@ -3,11 +3,14 @@
  * The bundle prepends the shared schedule helpers, with its two entry
  * functions renamed to private helpers. Date/allocation rules have one source.
  * The teamspace deployment uses USER_DEPLOYING and ANYONE_ANONYMOUS, as authorized
- * by the user. Both latest variants expose the authorized bounded details,
- * remain read-only and use the same current source.
+ * by the user. Teamspace adds its four authorized text fields to the public
+ * allowlist. Both variants remain read-only and use the same current source.
  */
 const PM_INTERNAL_ = Object.freeze({
-  error: '排程目前無法讀取，請稍後重試。'
+  error: '排程目前無法讀取，請稍後重試。',
+  fields: Object.freeze({
+    name: '專案／範圍', customer: '客戶', contact: '窗口', assignee: '執行者'
+  })
 });
 
 function doGet(e) {
@@ -51,7 +54,26 @@ function getTimeline() {
 }
 
 function internalRows_(rows) {
-  // Main-entry and teamspace share one explicit detail allowlist, customer-type
-  // validation, date/allocation rules and source-link exclusions.
-  return publicRows_(rows);
+  // Validate the common schedule with the public implementation, then add only
+  // the four explicitly authorized teamspace fields by validated project ID.
+  const result = publicRows_(rows);
+  const header = rows[0].map(text_);
+  const details = new Map();
+  rows.slice(1).forEach(function(row) {
+    if (!Array.isArray(row)) return;
+    const id = text_(row[header.indexOf('案號')]);
+    if (!/^(?:C|BG|P|D|O)-\d{3,}$/u.test(id)) return;
+    const fields = {};
+    Object.keys(PM_INTERNAL_.fields).forEach(function(key) {
+      fields[key] = detailText_(row[header.indexOf(PM_INTERNAL_.fields[key])]);
+    });
+    details.set(id, fields);
+  });
+  return {
+    projects: result.projects.map(function(project) {
+      // Dedicated source links, original rows and settings remain server-side.
+      return Object.assign({}, project, details.get(project.id));
+    }),
+    warnings: result.warnings
+  };
 }

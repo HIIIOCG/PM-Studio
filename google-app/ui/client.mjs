@@ -8,7 +8,6 @@ function scheduleNode(tag, className, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
-function projectName(project) { return project.name || scheduleText('unnamed'); }
 function projectCustomerCode(project) { return project.customerCode ? scheduleText('customer', { code: project.customerCode }) : scheduleText('missingCustomer'); }
 function projectCustomerType(project) { return project.customerType ? scheduleText(project.customerType) : scheduleText('missingCustomerType'); }
 function projectIdentity(project) { return projectCustomerCode(project) + ' · ' + projectCustomerType(project); }
@@ -22,7 +21,7 @@ function showScheduleDetails(block) {
     document.querySelector('main').append(scheduleDetailsDialog);
   }
   const project = block.project;
-  const heading = scheduleNode('h2', '', project.id + ' · ' + projectName(project));
+  const heading = scheduleNode('h2', '', project.id);
   heading.setAttribute('id', 'project-details-title');
   const close = scheduleNode('button', 'details-close', '×');
   close.setAttribute('id', 'close-project-details');
@@ -33,8 +32,8 @@ function showScheduleDetails(block) {
   scheduleDetailsDialog.replaceChildren(close, heading, scheduleNode('p', 'details-customer', projectCustomerCode(project)));
   const fields = scheduleNode('dl', 'project-fields');
   fields.append(scheduleNode('dt', '', scheduleText('customerType')), scheduleNode('dd', '', projectCustomerType(project)));
-  for (const key of ['customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps']) {
-    fields.append(scheduleNode('dt', '', scheduleText(key === 'customer' ? 'clientName' : key)), scheduleNode('dd', '', project[key] || scheduleText('unspecified')));
+  for (const key of ['owner', 'status', 'deliveryGoal', 'notes', 'deliverySteps']) {
+    fields.append(scheduleNode('dt', '', scheduleText(key)), scheduleNode('dd', '', project[key] || scheduleText('unspecified')));
   }
   scheduleDetailsDialog.append(fields);
   for (const phase of projectPhases(project)) scheduleDetailsDialog.append(scheduleNode('p', 'details-dates', scheduleText(phase.phase) + ' · ' + rangeText(phase.start, phase.end)));
