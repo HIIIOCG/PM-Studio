@@ -3,13 +3,13 @@ const WORKSPACE_COPY = Object.freeze({
     A: ['角色模型', '3D 角色模型製作。'],
     B: ['角色模型', '3D 角色模型製作。'],
     C: ['角色・場景', '角色、場景及其他 3D 模型製作。'],
-    D: ['遊戲 CT 美術', '遊戲 CT 美術外包。'],
+    D: ['遊戲外包', '遊戲外包'],
   },
   en: {
     A: ['Character models', '3D character modeling.'],
     B: ['Character models', '3D character modeling.'],
     C: ['Characters & scenes', '3D character, scene and other modeling.'],
-    D: ['Game CT art', 'Outsourced game CT art.'],
+    D: ['Game outsourcing', 'Game outsourcing'],
   },
 });
 

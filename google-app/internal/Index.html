@@ -425,13 +425,19 @@ html .row-rule { border-color:rgb(255 255 255 / .025); }
 .workspace-help-tooltip { overflow:auto; }
 @media (max-width:700px) { .brand-logo { width:100px; } }
 
-.header-top { flex-wrap:wrap; }
-.brand-link { margin-right:auto; }
-.header-top .date-navigation { margin-left:auto; }
+.header-top { min-height:92px; justify-content:flex-start; gap:22px; }
+.brand-copy { display:flex; align-items:baseline; gap:20px; min-width:0; }
+.brand-title { color:#eee; font-size:13px; font-weight:650; letter-spacing:.07em; white-space:nowrap; }
+.brand-subtitle { color:#8b8b8b; font-size:10px; font-weight:400; letter-spacing:.065em; white-space:nowrap; }
+.header-controls { display:flex; justify-content:flex-end; align-items:center; flex-wrap:wrap; gap:16px; padding:28px 0 22px; }
+.header-controls .language-button { min-height:44px; }
 .preview-note { margin:8px 0 0; font-size:10px; }
 @media (max-width:700px) {
-  .header-top { gap:10px 14px; padding:10px 0 12px; }
-  .header-top .date-navigation { order:3; width:100%; justify-content:flex-end; }
+  .header-top { min-height:86px; gap:18px; padding:16px 0; }
+  .brand-copy { flex-direction:column; align-items:flex-start; gap:4px; }
+  .brand-title { font-size:12px; }
+  .brand-subtitle { font-size:8.5px; }
+  .header-controls { gap:14px; padding:24px 0; }
 }
 
 .internal-access-note { margin: -18px 0 28px; color: var(--subtle); font-size: 11px; line-height: 1.7; }
@@ -445,7 +451,10 @@ html .row-rule { border-color:rgb(255 255 255 / .025); }
     <header class="app-header">
       <div class="header-top">
         <a class="brand brand-link" href="https://hiiiodigital.com/" aria-label="HIIIO 官網"><svg class="brand-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5909 1134" fill="currentColor" aria-hidden="true" focusable="false"><path d="M2526.17,1129.17l-739.834,-0c-45.375,-0 -82.166,-36.792 -82.166,-82.167l-0,-964.833c-0,-45.375 36.791,-82.167 82.166,-82.167l739.834,-0c45.375,-0 82.166,36.792 82.166,82.167l0,964.833c0,45.375 -36.791,82.167 -82.166,82.167Z"/><path d="M3561.58,1129.17l-739.833,-0c-45.375,-0 -82.167,-36.792 -82.167,-82.167l0,-964.833c0,-45.375 36.792,-82.167 82.167,-82.167l739.833,-0c45.375,-0 82.167,36.792 82.167,82.167l-0,964.833c-0,45.375 -36.792,82.167 -82.167,82.167Z"/><path d="M4597,1129.17l-739.833,-0c-45.375,-0 -82.167,-36.792 -82.167,-82.167l-0,-964.833c-0,-45.375 36.792,-82.167 82.167,-82.167l739.833,-0c45.375,-0 82.167,36.792 82.167,82.167l-0,964.833c-0,45.375 -36.792,82.167 -82.167,82.167Z"/><circle cx="5345.83" cy="566.667" r="562.5"/><path d="M1480.33,0.917l-544,-0c-45.375,-0 -82.166,36.791 -82.166,82.166l-0,237.959c-0,40.25 -32.667,72.916 -72.917,72.916c-40.25,0 -72.917,-32.666 -72.917,-72.916l0,-237.959c0,-45.375 -36.791,-82.166 -82.166,-82.166l-544,-0c-45.375,-0 -82.167,36.791 -82.167,82.166l-0,964.834c-0,45.375 36.792,82.166 82.167,82.166l544,0c45.375,0 82.166,-36.791 82.166,-82.166l0,-237.959c0,-40.291 32.667,-72.916 72.917,-72.916c40.25,-0 72.917,32.625 72.917,72.916l-0,237.959c-0,45.375 36.791,82.166 82.166,82.166l544,0c45.375,0 82.167,-36.791 82.167,-82.166l-0,-964.792c-0,-45.417 -36.792,-82.208 -82.167,-82.208Z"/></svg></a>
-<nav class="date-navigation" aria-describedby="date-range">
+        <div class="brand-copy"><span class="brand-title">PM STUDIO</span><span class="brand-subtitle">PRODUCTION SCHEDULE</span></div>
+      </div>
+      <div class="header-controls">
+        <nav class="date-navigation" aria-describedby="date-range">
           <button id="previous" class="arrow-button" aria-label="查看較早日期">←</button>
           <button id="today-button" class="today-button">今天</button>
           <button id="next" class="arrow-button" aria-label="查看較晚日期">→</button>
@@ -725,7 +734,7 @@ function scheduleText(key, values = {}) {
   return (SCHEDULE_TEXT[key]?.[scheduleLanguage === 'en' ? 1 : 0] || key).replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ''));
 }
 function workspaceText(id) {
-  return ({ A: ['角色模型', 'Characters'], B: ['角色模型', 'Characters'], C: ['角色・場景', 'Characters / scenes'], D: ['CT 美術', 'CT art'] })[id]?.[scheduleLanguage === 'en' ? 1 : 0] || id;
+  return ({ A: ['角色模型', 'Characters'], B: ['角色模型', 'Characters'], C: ['角色・場景', 'Characters / scenes'], D: ['遊戲外包', 'Game outsourcing'] })[id]?.[scheduleLanguage === 'en' ? 1 : 0] || id;
 }
 function scheduleMonth(day) {
   return new Intl.DateTimeFormat(scheduleLanguage === 'en' ? 'en-US' : 'zh-TW', { timeZone: 'UTC', year: 'numeric', month: 'short' }).format(new Date(day * 86400000));
@@ -741,13 +750,13 @@ const WORKSPACE_COPY = Object.freeze({
     A: ['角色模型', '3D 角色模型製作。'],
     B: ['角色模型', '3D 角色模型製作。'],
     C: ['角色・場景', '角色、場景及其他 3D 模型製作。'],
-    D: ['遊戲 CT 美術', '遊戲 CT 美術外包。'],
+    D: ['遊戲外包', '遊戲外包'],
   },
   en: {
     A: ['Character models', '3D character modeling.'],
     B: ['Character models', '3D character modeling.'],
     C: ['Characters & scenes', '3D character, scene and other modeling.'],
-    D: ['Game CT art', 'Outsourced game CT art.'],
+    D: ['Game outsourcing', 'Game outsourcing'],
   },
 });
 

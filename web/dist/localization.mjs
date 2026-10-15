@@ -61,7 +61,7 @@ export function scheduleText(key, values = {}) {
   return (SCHEDULE_TEXT[key]?.[scheduleLanguage === 'en' ? 1 : 0] || key).replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ''));
 }
 export function workspaceText(id) {
-  return ({ A: ['角色模型', 'Characters'], B: ['角色模型', 'Characters'], C: ['角色・場景', 'Characters / scenes'], D: ['CT 美術', 'CT art'] })[id]?.[scheduleLanguage === 'en' ? 1 : 0] || id;
+  return ({ A: ['角色模型', 'Characters'], B: ['角色模型', 'Characters'], C: ['角色・場景', 'Characters / scenes'], D: ['遊戲外包', 'Game outsourcing'] })[id]?.[scheduleLanguage === 'en' ? 1 : 0] || id;
 }
 export function scheduleMonth(day) {
   return new Intl.DateTimeFormat(scheduleLanguage === 'en' ? 'en-US' : 'zh-TW', { timeZone: 'UTC', year: 'numeric', month: 'short' }).format(new Date(day * 86400000));

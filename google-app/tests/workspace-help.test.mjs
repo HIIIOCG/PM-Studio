@@ -46,7 +46,7 @@ function helpPage() {
 
 test('workspace help gives one concise customer-facing sentence in either language', () => {
   const page = helpPage();
-  const chinese = ['3D 角色模型製作。','3D 角色模型製作。','角色、場景及其他 3D 模型製作。','遊戲 CT 美術外包。'];
+  const chinese = ['3D 角色模型製作。','3D 角色模型製作。','角色、場景及其他 3D 模型製作。','遊戲外包'];
   for (const [index,id] of ['A','B','C','D'].entries()) {
     const { button, tooltip } = page.render(id);
     assert.equal(tooltip.children.length,1);
@@ -56,7 +56,7 @@ test('workspace help gives one concise customer-facing sentence in either langua
     assert.equal(button.children.at(-1).textContent,'ⓘ');
   }
   page.language('en');
-  const english = ['3D character modeling.','3D character modeling.','3D character, scene and other modeling.','Outsourced game CT art.'];
+  const english = ['3D character modeling.','3D character modeling.','3D character, scene and other modeling.','Game outsourcing'];
   for (const [index,id] of ['A','B','C','D'].entries()) assert.equal(page.render(id).tooltip.children[0].textContent,english[index]);
 });
 
