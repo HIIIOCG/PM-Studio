@@ -12,7 +12,7 @@ import { createPreviewPayload } from '../../scripts/serve-google-preview.mjs';
 
 function sample() {
   const data = createPreviewPayload(new Date('2026-12-21T04:00:00Z'));
-  data.projects = data.projects.map((project) => ({ ...project, name: '虛構專案 ' + project.id, customer: '虛構客戶', owner: '虛構負責人', status: '虛構狀態', deliveryGoal: '虛構交付目標', notes: '虛構補充\n第二行', contact: '虛構窗口', assignee: '虛構執行者', deliverySteps: '虛構步驟' }));
+  data.projects = data.projects.map((project) => ({ ...project, name: '虛構專案 ' + project.id, customer: '虛構客戶', owner: '虛構專案主管', status: '虛構狀態（2026/12/21 更新）', deliveryGoal: '虛構交付目標', notes: '虛構補充\n第二行', contact: '虛構窗口', assignee: '虛構執行者', deliverySteps: '虛構步驟' }));
   return data;
 }
 async function fixture(t, bundle = false) {
@@ -91,7 +91,7 @@ test('teamspace preserves nine bounded detail fields while public rejects team-o
   assert.equal(result.projects[0].notes, '虛構補充\n第二行');
   assert.equal(JSON.stringify(source), original);
   assert.throws(() => normalizeTimelinePayload(source));
-  assert.equal(normalizeTimelinePayload(createPreviewPayload(new Date('2026-12-21T04:00:00Z'))).projects[0].owner, 'Fictional owner');
+  assert.equal(normalizeTimelinePayload(createPreviewPayload(new Date('2026-12-21T04:00:00Z'))).projects[0].owner, 'Fictional project lead');
   for (const field of INTERNAL_PROJECT_FIELDS) {
     const missing = sample(); delete missing.projects[0][field]; assert.throws(() => normalizeInternalTimelinePayload(missing));
     for (const value of [null, {}, 1, 'x'.repeat(4001)]) { const bad = sample(); bad.projects[0][field] = value; assert.throws(() => normalizeInternalTimelinePayload(bad)); }

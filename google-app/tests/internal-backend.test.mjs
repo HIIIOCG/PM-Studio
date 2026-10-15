@@ -11,14 +11,14 @@ const sharedCode = publicCode.replace(/^function doGet\(/m, 'function publicDoGe
 const SOURCE_ID = 'FICTIONAL_INTERNAL_SOURCE_1234';
 const INTERNAL_ERROR = '排程目前無法讀取，請稍後重試。';
 const PUBLIC_ERROR = '排程目前無法讀取，請稍後重試。';
-const header = ['案號', '目前交付目標', '專案／範圍', '客戶', '負責人', '狀態', '原始開始', '原始結束',
+const header = ['案號', '目前交付目標', '專案／範圍', '客戶', '專案主管', '狀態', '原始開始', '原始結束',
   '延長修正／補充', '交付步驟（參考）', '資料', '窗口', '執行者', '目前排程開始', '目前排程結束',
   '修正開始', '修正結束', '客戶編號', '客戶類型', '工作區 A 占用', '工作區 B 占用', '工作區 C 占用', '工作區 D 占用', '排程性質', '未結事項'];
 const defaults = {
   '案號': 'C-001', '目前交付目標': 'FictionalGoal', '專案／範圍': 'FictionalProject', '客戶': 'FictionalCustomer',
-  '負責人': 'FictionalOwner', '執行者': 'FictionalExecutor', '窗口': 'FictionalContact',
+  '專案主管': 'FictionalOwner', '執行者': 'FictionalExecutor', '窗口': 'FictionalContact',
   '資料': 'https://private.example/source', '交付步驟（參考）': 'FictionalDelivery',
-  '狀態': '製作中', '客戶編號': 'V-01', '客戶類型': 'VTuber公司', '原始開始': '2026-01-01', '原始結束': '2026-02-28',
+  '狀態': '製作中（2026/10/12 更新）', '客戶編號': 'V-01', '客戶類型': 'VTuber公司', '原始開始': '2026-01-01', '原始結束': '2026-02-28',
   '目前排程開始': '2026-12-01', '目前排程結束': '2027-01-31', '工作區 A 占用': '1'
 };
 const privateKeys = ['name', 'customer', 'owner', 'status', 'deliveryGoal', 'notes', 'contact', 'assignee', 'deliverySteps'];
@@ -84,10 +84,12 @@ test('one current source read returns the schedule plus the exact internal text 
   assert.deepEqual(env.state.reads, [{ id: SOURCE_ID, range: "'專案列表'", settings: { majorDimension: 'ROWS', valueRenderOption: 'FORMATTED_VALUE' } }]);
   assert.deepEqual(payload.projects[0], {
     ...base.projects[0], name: 'FictionalProject', customer: 'FictionalCustomer', owner: 'FictionalOwner',
-    status: '製作中', deliveryGoal: 'FictionalGoal', notes: '', contact: 'FictionalContact',
+    status: '製作中（2026/10/12 更新）', deliveryGoal: 'FictionalGoal', notes: '', contact: 'FictionalContact',
     assignee: 'FictionalExecutor', deliverySteps: 'FictionalDelivery'
   });
   assert.doesNotMatch(JSON.stringify(payload), /private\.example|FICTIONAL_INTERNAL_SOURCE|sourceUrl|rawRow|properties|originalStart/);
+  const legacy = header.map(label => label === '專案主管' ? '負責人' : label);
+  assert.equal(setup({ header: legacy, rows: [row({ '負責人': 'LegacyLead' }, legacy)] }).rpc('getTimeline').projects[0].owner, 'LegacyLead');
 });
 
 test('source failures return a generic error and never substitute cached data', () => {
@@ -145,7 +147,7 @@ test('private fields attach by project ID when invalid source rows are skipped a
 });
 
 test('empty optional internal columns return empty text and older W/X headers retain the shared migration behavior', () => {
-  const columns = header.filter(label => !['專案／範圍', '客戶', '負責人', '狀態', '目前交付目標', '窗口', '執行者', '交付步驟（參考）', '排程性質', '未結事項'].includes(label));
+  const columns = header.filter(label => !['專案／範圍', '客戶', '專案主管', '狀態', '目前交付目標', '窗口', '執行者', '交付步驟（參考）', '排程性質', '未結事項'].includes(label));
   const payload = plain(setup({ header: columns, rows: [row({}, columns)] }).rpc('getTimeline'));
   assert.ok(privateKeys.every(key => payload.projects[0][key] === ''));
   assert.equal(payload.projects[0].scheduleKind, 'production');
@@ -156,7 +158,7 @@ test('empty optional internal columns return empty text and older W/X headers re
 test('internal free text is bounded while preserving plain text and valid Unicode at the boundary', () => {
   const changes = {
     '專案／範圍': '  <script>Fictional</script>  ',
-    '客戶': 'x'.repeat(5000), '負責人': 'x'.repeat(3999) + '😀',
+    '客戶': 'x'.repeat(5000), '專案主管': 'x'.repeat(3999) + '😀',
     '延長修正／補充': '  第一行\n第二行  '
   };
   const item = setup({ rows: [row(changes)] }).rpc('getTimeline').projects[0];
@@ -171,6 +173,8 @@ test('invalid headers, duplicate project IDs and malformed/oversized source fail
   const oversized = [[], [], [], [], header, ...Array.from({ length: 996 }, () => [])];
   for (const options of [
     { header: [...header, '案號'] }, { header: header.filter(label => label !== '客戶編號') },
+    { header: [...header, '負責人'] }, { header: [...header, '專案主管'] },
+    { header: [...header.filter(label => label !== '專案主管'), '負責人', '負責人'] },
     { rows: [row(), row()] }, { response: {} }, { values: [] }, { values: oversized },
     { header: [...header, ...Array(43).fill('')] }
   ]) assert.throws(() => setup(options).rpc('getTimeline'), { message: INTERNAL_ERROR });

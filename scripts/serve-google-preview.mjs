@@ -22,7 +22,7 @@ export function createPreviewPayload(now = new Date()) {
   let projectIndex = 0;
   const project = (id, customerCode, start, end, workspaceUnits, correctionStart = '', correctionEnd = '', pendingReasons = []) =>
     ({ id, customerCode, customerType: customerTypes[projectIndex++ % customerTypes.length],
-      owner: 'Fictional owner', status: 'Fictional status',
+      owner: 'Fictional project lead', status: 'Fictional status（更新日期待確認）',
       deliveryGoal: 'Fictional delivery goal', notes: 'Fictional notes\nSecond line', deliverySteps: 'Fictional delivery steps',
       start, end, correctionStart, correctionEnd, workspaceIds: Object.keys(workspaceUnits), workspaceUnits, pendingReasons, scheduleKind: 'production', followUp: [] });
   return {

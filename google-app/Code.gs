@@ -5,7 +5,7 @@ const PM_SCHEDULE_ = Object.freeze({
   textLimit: 4000,
   customerTypes: Object.freeze(['VTuber個人', 'VTuber公司', '遊戲公司', '其他']),
   fields: Object.freeze({
-    owner: '負責人', status: '狀態', deliveryGoal: '目前交付目標',
+    owner: '專案主管', status: '狀態', deliveryGoal: '目前交付目標',
     notes: '延長修正／補充', deliverySteps: '交付步驟（參考）'
   }),
   workspaces: [
@@ -64,7 +64,12 @@ function getTimeline() {
 
 function publicRows_(rows) {
   if (!Array.isArray(rows) || !Array.isArray(rows[0])) throw new Error('headers');
-  const header = rows[0].map(text_);
+  // Normalize the former label before duplicate checking. Either unique label
+  // is readable during migration; competing columns must never be guessed.
+  const header = rows[0].map(function(value) {
+    const label = text_(value);
+    return label === '負責人' ? PM_SCHEDULE_.fields.owner : label;
+  });
   const nonempty = header.filter(Boolean);
   if (new Set(nonempty).size !== nonempty.length || PM_SCHEDULE_.required.some(function(label) { return !header.includes(label); })) throw new Error('headers');
   const ids = new Set(), warnings = new Set(), projects = [];

@@ -6,14 +6,14 @@ import vm from 'node:vm';
 const code = await readFile(new URL('../Code.gs', import.meta.url), 'utf8');
 const SOURCE_ID = 'FICTIONAL_SOURCE_1234';
 const PUBLIC_ERROR = '排程目前無法讀取，請稍後重試。';
-const header = ['案號', '目前交付目標', '專案／範圍', '客戶', '負責人', '狀態', '原始開始', '原始結束',
+const header = ['案號', '目前交付目標', '專案／範圍', '客戶', '專案主管', '狀態', '原始開始', '原始結束',
   '延長修正／補充', '交付步驟（參考）', '資料', '窗口', '執行者', '目前排程開始', '目前排程結束',
   '修正開始', '修正結束', '客戶編號', '客戶類型', '工作區 A 占用', '工作區 B 占用', '工作區 C 占用', '工作區 D 占用', '排程性質', '未結事項'];
 const defaults = {
   '案號': 'C-001', '目前交付目標': 'FictionalGoal', '專案／範圍': 'PrivateProject', '客戶': 'PrivateCustomer',
-  '負責人': 'FictionalOwner', '執行者': 'PrivateExecutor', '窗口': 'PrivateContact',
+  '專案主管': 'FictionalOwner', '執行者': 'PrivateExecutor', '窗口': 'PrivateContact',
   '資料': 'https://private.example/source', '交付步驟（參考）': 'FictionalDelivery',
-  '狀態': '製作中', '客戶編號': 'V-01', '客戶類型': 'VTuber個人', '原始開始': '2026-01-01', '原始結束': '2026-02-28',
+  '狀態': '製作中（2026/10/12 更新）', '客戶編號': 'V-01', '客戶類型': 'VTuber個人', '原始開始': '2026-01-01', '原始結束': '2026-02-28',
   '目前排程開始': '2026-12-01', '目前排程結束': '2027-01-31', '工作區 A 占用': '1'
 };
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -72,7 +72,7 @@ test('single read uses formatted source values and returns only the exact public
     id: 'C-001', customerCode: 'V-01', customerType: 'VTuber個人', start: '2026-12-01', end: '2027-01-31', correctionStart: '', correctionEnd: '',
     scheduleKind: 'production', followUp: [],
     workspaceIds: ['A'], workspaceUnits: { A: 1 }, pendingReasons: [],
-    owner: 'FictionalOwner', status: '製作中', deliveryGoal: 'FictionalGoal', notes: '', deliverySteps: 'FictionalDelivery'
+    owner: 'FictionalOwner', status: '製作中（2026/10/12 更新）', deliveryGoal: 'FictionalGoal', notes: '', deliverySteps: 'FictionalDelivery'
   });
   assert.doesNotMatch(JSON.stringify(payload), /PrivateProject|PrivateCustomer|PrivateExecutor|PrivateContact|private\.example|FICTIONAL_SOURCE|sourceUrl|externalAlias|approved|originalStart/);
 });
@@ -133,12 +133,15 @@ test('customer types accept only four confirmed labels while blank and missing c
 test('authorized public details are plain bounded text without source-link or raw-row fields', () => {
   const item = project({
     '目前交付目標': '  <script>Fictional</script>  ', '狀態': 'x'.repeat(5000),
-    '負責人': 'x'.repeat(3999) + '😀', '延長修正／補充': '  第一行\n第二行  '
+    '專案主管': 'x'.repeat(3999) + '😀', '延長修正／補充': '  第一行\n第二行  '
   });
   assert.equal(item.deliveryGoal, '<script>Fictional</script>');
   assert.equal(item.status.length, 4000); assert.equal(item.owner.length, 3999);
   assert.equal(item.notes, '第一行\n第二行');
   assert.doesNotMatch(JSON.stringify(item), /private\.example|sourceUrl|rawRow/);
+  for (const status of ['製作中（2026/10/12 更新）', '製作中（更新日期待確認）']) {
+    assert.equal(project({ '狀態': status }).status, status);
+  }
 });
 
 test('all public projects omit project and customer names, contact and assignee before reaching the browser', () => {
@@ -287,9 +290,12 @@ test('invalid allocations remain pending and never become one unit or reveal cel
 test('headers can move, extra private fields stay private, required or duplicate headers fail generically', () => {
   const reordered = [...header].reverse();
   assert.equal(setup({ header: reordered, rows: [row({}, reordered)] }).rpc('getTimeline').projects[0].customerCode, 'V-01');
+  const legacy = header.map(label => label === '專案主管' ? '負責人' : label);
+  assert.equal(setup({ header: legacy, rows: [row({ '負責人': 'LegacyLead' }, legacy)] }).rpc('getTimeline').projects[0].owner, 'LegacyLead');
   const extra = [...header, 'private_notes'];
   assert.doesNotMatch(JSON.stringify(setup({ header: extra, rows: [row({ private_notes: 'SecretPrivate' }, extra)] }).rpc('getTimeline')), /SecretPrivate/);
-  for (const columns of [header.filter(label => label !== '客戶編號'), [...header, '案號']]) {
+  for (const columns of [header.filter(label => label !== '客戶編號'), [...header, '案號'],
+    [...header, '專案主管'], [...legacy, '負責人'], [...header, '負責人'], [...header, ' 負責人 ']]) {
     assert.throws(() => setup({ header: columns }).rpc('getTimeline'), { message: PUBLIC_ERROR });
   }
 });
