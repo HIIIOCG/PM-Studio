@@ -10,32 +10,41 @@
 <body>
   <main class="app">
     <header class="app-header">
-      <div><p class="brand">PM STUDIO <span>／ PRODUCTION SCHEDULE</span></p><h1 id="schedule-title">專案排程</h1></div>
-      <button id="language-toggle" class="language-button" lang="en" aria-label="Switch to English">English</button>
-    </header>
-    <p id="preview-note" class="preview-note" hidden>示意預覽 · 所有資料皆為虛構</p>
-    <section class="schedule" aria-labelledby="schedule-title">
-      <div class="toolbar">
-        <div class="date-navigation">
+      <div class="header-top">
+        <a class="brand brand-link" href="https://hiiiodigital.com/" aria-label="HIIIO 官網"><svg class="brand-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5909 1134" fill="currentColor" aria-hidden="true" focusable="false"><path d="M2526.17,1129.17l-739.834,-0c-45.375,-0 -82.166,-36.792 -82.166,-82.167l-0,-964.833c-0,-45.375 36.791,-82.167 82.166,-82.167l739.834,-0c45.375,-0 82.166,36.792 82.166,82.167l0,964.833c0,45.375 -36.791,82.167 -82.166,82.167Z"/><path d="M3561.58,1129.17l-739.833,-0c-45.375,-0 -82.167,-36.792 -82.167,-82.167l0,-964.833c0,-45.375 36.792,-82.167 82.167,-82.167l739.833,-0c45.375,-0 82.167,36.792 82.167,82.167l-0,964.833c-0,45.375 -36.792,82.167 -82.167,82.167Z"/><path d="M4597,1129.17l-739.833,-0c-45.375,-0 -82.167,-36.792 -82.167,-82.167l-0,-964.833c-0,-45.375 36.792,-82.167 82.167,-82.167l739.833,-0c45.375,-0 82.167,36.792 82.167,82.167l-0,964.833c-0,45.375 -36.792,82.167 -82.167,82.167Z"/><circle cx="5345.83" cy="566.667" r="562.5"/><path d="M1480.33,0.917l-544,-0c-45.375,-0 -82.166,36.791 -82.166,82.166l-0,237.959c-0,40.25 -32.667,72.916 -72.917,72.916c-40.25,0 -72.917,-32.666 -72.917,-72.916l0,-237.959c0,-45.375 -36.791,-82.166 -82.166,-82.166l-544,-0c-45.375,-0 -82.167,36.791 -82.167,82.166l-0,964.834c-0,45.375 36.792,82.166 82.167,82.166l544,0c45.375,0 82.166,-36.791 82.166,-82.166l0,-237.959c0,-40.291 32.667,-72.916 72.917,-72.916c40.25,-0 72.917,32.625 72.917,72.916l-0,237.959c-0,45.375 36.791,82.166 82.166,82.166l544,0c45.375,0 82.167,-36.791 82.167,-82.166l-0,-964.792c-0,-45.417 -36.792,-82.208 -82.167,-82.208Z"/></svg></a>
+<nav class="date-navigation" aria-describedby="date-range">
           <button id="previous" class="arrow-button" aria-label="查看較早日期">←</button>
           <button id="today-button" class="today-button">今天</button>
           <button id="next" class="arrow-button" aria-label="查看較晚日期">→</button>
-        </div>
-        <strong id="date-range" class="date-range">—</strong>
-        <div class="legend"><span><i class="production-key"></i><span id="legend-production">製作</span></span><span><i class="correction-key"></i><span id="legend-correction">修正</span></span><span><i class="reservation-key"></i><span id="legend-reservation">時段預約</span></span><span><i class="follow-up-key"></i><span id="legend-follow-up">後續追蹤</span></span></div>
+        </nav>
+        <button id="language-toggle" class="language-button" lang="en" aria-label="Switch to English">English</button>
+      </div>
+      <h1 id="schedule-title" class="sr-only">專案排程</h1>
+    </header>
+    <section class="schedule" aria-labelledby="schedule-title">
+      <div class="toolbar">
+        <span id="date-range" class="sr-only" role="status" aria-live="polite" aria-atomic="true">—</span>
+
       </div>
       <div id="load-notice" class="load-notice" role="status"><span id="load-message">正在讀取排程</span><button id="retry" hidden>重試</button></div>
       <div id="timeline-grid" class="timeline-grid" hidden>
         <div id="workspace-labels" class="workspace-labels"></div>
         <div id="timeline-viewport" class="timeline-viewport" tabindex="0" aria-label="排程時間軸，可左右捲動"><div id="timeline-canvas" class="timeline-canvas"></div></div>
       </div>
-      <div class="timeline-footer"><span id="visible-count"></span><span id="sync-status" role="status"></span></div>
+      <div class="timeline-footer">
+        <span id="sync-status" class="sync-status" role="status"></span>
+        <div class="schedule-key">
+          <div class="legend"><span><i class="production-key"></i><span id="legend-production">製作</span></span><span><i class="correction-key"></i><span id="legend-correction">修正</span></span><span><i class="reservation-key"></i><span id="legend-reservation">時段預約</span></span><span><i class="follow-up-key"></i><span id="legend-follow-up">後續追蹤</span></span></div>
+          <span id="visible-count" class="visible-count"></span>
+        </div>
+      </div>
     </section>
     <section id="pending-section" class="pending-section" hidden aria-labelledby="pending-title">
       <div class="section-heading"><h2 id="pending-title">待排與待確認</h2><span id="pending-count" class="count-badge"></span></div>
       <div id="pending-projects" class="pending-projects"></div>
     </section>
     <footer id="page-footer" class="page-footer">空白時段不代表可預約，檔期須由團隊確認。</footer>
+    <p id="preview-note" class="preview-note" hidden>示意預覽 · 所有資料皆為虛構</p>
   </main>
   <script type="module" src="/app.mjs"></script>
 </body>

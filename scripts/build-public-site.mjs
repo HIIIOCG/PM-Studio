@@ -40,7 +40,7 @@ async function renderDirectEntry(appUrl, teamspace) {
   const paths = [
     'web/dist/index.html', 'web/dist/styles.css', 'web/dist/app.mjs',
     'google-app/ui/common-contract.mjs', 'google-app/ui/http-bridge.mjs',
-    'web/dist/localization.mjs',
+    'web/dist/localization.mjs', 'web/dist/workspace-help.mjs', 'web/dist/neutral-refraction.mjs',
     ...(teamspace ? ['google-app/internal/ui/internal-contract.mjs'] : []),
     teamspace ? 'google-app/internal/ui/client.mjs' : 'google-app/ui/client.mjs',
   ];
@@ -54,7 +54,7 @@ async function renderDirectEntry(appUrl, teamspace) {
   const script = '// Generated from PM Studio sources. No project records are embedded.\n(async () => {\n'
     + 'const timelineReadUrl = ' + JSON.stringify(url) + ';\n'
     + modules.map(browserSource).join('\n') + '\n})();';
-  const teamspaceCss = teamspace ? '\n.internal-access-note { margin: -10px 0 22px; color: #a6bfce; font-size: 12px; line-height: 1.7; }\n.project-name { font-size: 11px; color: #c5d6e2; font-weight: 500; }\n.pending-card .project-name { overflow-wrap: anywhere; }\n' : '';
+  const teamspaceCss = teamspace ? '\n.internal-access-note { margin: -18px 0 28px; color: var(--subtle); font-size: 11px; line-height: 1.7; }\n.project-name { min-width: 0; overflow: hidden; color: #f7f7f7; font-size: 12px; font-weight: 400; text-overflow: ellipsis; }\n.pending-card .project-name { white-space: normal; overflow-wrap: anywhere; }\n@media (max-width: 700px) { .internal-access-note { margin-top: -10px; margin-bottom: 24px; } }\n' : '';
   let html = sourceHtml
     .replace('<meta name="color-scheme" content="dark">',
       '<meta name="color-scheme" content="dark">\n  <meta name="referrer" content="no-referrer">'
@@ -63,7 +63,7 @@ async function renderDirectEntry(appUrl, teamspace) {
     .replace('<script type="module" src="/app.mjs"></script>', () => '<script>\n' + safeScript(script) + '\n</script>');
   if (teamspace) html = html
     .replace('<title>PM Studio｜專案排程</title>', '<title>PM Studio｜團隊專案排程</title>')
-    .replace('<h1 id="schedule-title">專案排程</h1>', '<h1 id="schedule-title">團隊專案排程</h1>')
+    .replace('<h1 id="schedule-title" class="sr-only">專案排程</h1>', '<h1 id="schedule-title" class="sr-only">團隊專案排程</h1>')
     .replace('<p id="preview-note"', '<p id="internal-access-note" class="internal-access-note">排程畫面為唯讀。</p>\n    <p id="preview-note"');
   if (/<iframe\b|google\.script\.run|createGoogleBridge\(/.test(html)) throw new Error('Unexpected Google UI transport.');
   return html;

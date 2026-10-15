@@ -10,6 +10,8 @@ function fullProjectIdentity(project) { return project.id + ' · ' + projectName
 const scheduleElement = (id) => document.getElementById(id);
 const scheduleState = { payload: null, firstDay: null, today: null, loading: false, failed: false, layout: null, scale: null, viewPosition: null };
 const readSchedule = createGoogleBridge();
+const workspaceHelp = createWorkspaceHelp({ getLanguage:getScheduleLanguage });
+startScheduleRefraction();
 let scheduleDetailsDialog;
 function scheduleNode(tag, className, text) {
   const node = document.createElement(tag);
@@ -57,6 +59,7 @@ function showScheduleDetails(block) {
 }
 function renderScheduleChrome() {
   document.documentElement.lang = getScheduleLanguage();
+  document.querySelector('.brand-link')?.setAttribute('aria-label', getScheduleLanguage() === 'en' ? 'HIIIO website' : 'HIIIO 官網');
   document.title = 'PM Studio｜' + internalText('title');
   for (const [id, key] of Object.entries({ 'schedule-title': 'title', 'today-button': 'today', 'legend-production': 'production', 'legend-correction': 'correction', 'legend-reservation': 'reservation', 'legend-follow-up': 'followUp', 'pending-title': 'pending', 'page-footer': 'footer', 'retry': 'retry', 'preview-note': 'preview' })) scheduleElement(id).textContent = scheduleText(key);
   scheduleElement('schedule-title').textContent = internalText('title');
@@ -95,12 +98,18 @@ function renderSchedulePending() {
   target.replaceChildren();
   for (const { project, reasons } of projects) {
     const card = scheduleNode('article', 'pending-card');
+    const identity = scheduleNode('div', 'pending-identity');
     const title = scheduleNode('div', 'card-heading');
     title.append(scheduleNode('span', 'card-id', project.id), scheduleNode('span', 'project-name', projectName(project)));
-    card.append(title, scheduleNode('p', 'customer-code', projectIdentity(project)), scheduleNode('p', 'pending-reason', reasons.map((reason) => scheduleText(reason)).join(' · ')));
-    card.append(scheduleNode('p', 'pending-dates', scheduleText(project.scheduleKind) + ' ' + rangeText(project.start, project.end)));
-    if (project.correctionStart || project.correctionEnd || reasons.includes('correction-dates')) card.append(scheduleNode('p', 'pending-dates', scheduleText('correction') + ' ' + rangeText(project.correctionStart, project.correctionEnd)));
-    const details = scheduleNode('button', 'pending-details', scheduleText('details'));
+    identity.append(title, scheduleNode('p', 'customer-code', projectIdentity(project)));
+    const schedule = scheduleNode('div', 'pending-schedule');
+    schedule.append(scheduleNode('p', 'pending-dates', scheduleText(project.scheduleKind) + ' ' + rangeText(project.start, project.end)));
+    if (project.correctionStart || project.correctionEnd || reasons.includes('correction-dates')) schedule.append(scheduleNode('p', 'pending-dates', scheduleText('correction') + ' ' + rangeText(project.correctionStart, project.correctionEnd)));
+    card.append(identity, scheduleNode('p', 'pending-reason', reasons.map((reason) => scheduleText(reason)).join(' · ')), schedule);
+    const details = scheduleNode('button', 'pending-details');
+    const arrow = scheduleNode('span', 'details-arrow', '↗');
+    arrow.setAttribute('aria-hidden', 'true');
+    details.append(scheduleNode('span', '', scheduleText('details')), arrow);
     details.setAttribute('type', 'button');
     details.setAttribute('aria-label', scheduleText('details') + ' · ' + fullProjectIdentity(project));
     details.addEventListener('click', () => showScheduleDetails({ project, phase: 'pending' }));
@@ -136,6 +145,7 @@ function renderScheduleTimeline(preserveScroll = false) {
   canvas.replaceChildren();
   canvas.style.width = layout.width + 'px'; canvas.style.height = layout.height + 'px';
   const labels = scheduleElement('workspace-labels');
+  workspaceHelp.close();
   labels.replaceChildren(scheduleNode('div', 'label-axis', scheduleText('workspace')));
   let monthStart = firstDay;
   for (let index = 0; index < TIMELINE_DAYS; index++) {
@@ -161,14 +171,15 @@ function renderScheduleTimeline(preserveScroll = false) {
   }
   for (const row of layout.rows) {
     const label = scheduleNode('div', 'workspace-label'); label.style.height = row.height + 'px';
-    label.append(scheduleNode('span', 'workspace-letter', row.workspace.id), scheduleNode('span', 'workspace-description', workspaceText(row.workspace.id))); labels.append(label);
+    workspaceHelp.render(label, row.workspace.id); labels.append(label);
     const rule = scheduleNode('div', 'row-rule'); rule.style.top = row.top + row.height + 'px'; canvas.append(rule);
     if (!row.blocks.length && !row.followUps.length) { const empty = scheduleNode('span', 'empty-row', scheduleText('noWork')); empty.style.top = row.top + 43 + 'px'; canvas.append(empty); }
     for (const block of row.blocks) {
       const project = block.project;
-      const card = scheduleNode('button', 'project-card ' + block.phase + (block.startPrecision === 'month' ? ' month-start' : '') + (block.endPrecision === 'month' ? ' month-end' : ''));
+      const card = scheduleNode('button', 'project-card is-teamspace ' + block.phase + (block.width < 190 ? ' is-compact' : '') + (block.width < 80 ? ' is-narrow' : '') + (block.startPrecision === 'month' ? ' month-start' : '') + (block.endPrecision === 'month' ? ' month-end' : ''));
       card.setAttribute('type', 'button');
       card.setAttribute('data-project-id', project.id);
+      card.setAttribute('data-material', 'neutral-glass');
       card.setAttribute('data-phase', block.phase);
       card.setAttribute('data-start-precision', block.startPrecision);
       card.setAttribute('data-end-precision', block.endPrecision);
@@ -176,11 +187,15 @@ function renderScheduleTimeline(preserveScroll = false) {
       card.setAttribute('tabindex', '0');
       const identity = fullProjectIdentity(project);
       const details = identity + ' · ' + scheduleText(block.phase) + ' · ' + rangeText(block.start, block.end) + ' · ' + scheduleText('workspace') + ' ' + project.workspaceIds.join(' + ');
-      card.setAttribute('aria-label', details); card.setAttribute('title', details);
-      const heading = scheduleNode('div', 'card-heading'); heading.append(scheduleNode('span', 'card-id', project.id), scheduleNode('span', 'project-name', projectName(project)));
+      card.setAttribute('aria-label', details);
+      const heading = scheduleNode('div', 'card-heading'); heading.append(scheduleNode('span', 'card-id', project.id));
+      heading.append(scheduleNode('span', 'card-phase', scheduleText(block.phase)));
+      heading.append(scheduleNode('span', 'project-name', projectName(project)));
       const content = scheduleNode('span', 'card-content');
-      content.append(heading, scheduleNode('span', 'card-dates', rangeText(block.start, block.end)), scheduleNode('span', 'card-meta', projectIdentity(project) + ' · ' + scheduleText(block.phase) + ' · ' + project.workspaceIds.join(' + ') + ' · ' + String(project.workspaceUnits[row.workspace.id])));
-      card.append(content);
+      content.append(heading, scheduleNode('span', 'card-meta', projectIdentity(project)));
+      const glassSurface = scheduleNode('span', 'project-glass-surface');
+      glassSurface.setAttribute('aria-hidden', 'true');
+      card.append(glassSurface, content);
       card.addEventListener('click', () => showScheduleDetails(block));
       canvas.append(card);
     }
@@ -197,7 +212,7 @@ function renderScheduleTimeline(preserveScroll = false) {
         endpoint.setAttribute('data-project-id', project.id);
         endpoint.setAttribute('data-phase', 'followUp');
         const details = fullProjectIdentity(project) + ' · ' + project.followUp.map((status) => scheduleText(status)).join(' · ');
-        endpoint.setAttribute('aria-label', details); endpoint.setAttribute('title', details);
+        endpoint.setAttribute('aria-label', details);
         endpoint.style.left = followUp.left + followUp.width - 22 + 'px'; endpoint.style.top = followUp.top - 22 + 'px';
         endpoint.append(scheduleNode('span', 'follow-up-label', project.id));
         endpoint.addEventListener('click', () => showScheduleDetails(followUp));

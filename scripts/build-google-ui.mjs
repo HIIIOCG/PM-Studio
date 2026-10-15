@@ -15,7 +15,7 @@ export async function buildGoogleUi({ view = 'public', outputDir, packageDir = r
   const [html, css, ...modules] = await Promise.all([
     read('web/dist/index.html'), read('web/dist/styles.css'), read('web/dist/app.mjs'),
     read('google-app/ui/common-contract.mjs'), read('google-app/ui/bridge.mjs'),
-    read('web/dist/localization.mjs'), read('google-app/ui/client.mjs'),
+    read('web/dist/localization.mjs'), read('web/dist/workspace-help.mjs'), read('web/dist/neutral-refraction.mjs'), read('google-app/ui/client.mjs'),
   ]);
   const script = '// Generated from PM Studio sources. No project records are embedded.\n(async () => {\n' + modules.map(browserSource).join('\n') + '\n})();';
   const template = html.replace('<link rel="stylesheet" href="/styles.css">', () => '<style>\n' + css + '</style>')

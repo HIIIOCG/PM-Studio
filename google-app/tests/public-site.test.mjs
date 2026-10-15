@@ -31,6 +31,10 @@ function assertDirectUi(html, endpoint, teamspace = false) {
   assert.doesNotMatch(html, /<iframe\b|<link[^>]+href=|<script[^>]+src=|google\.script|createGoogleBridge\(|class="open-schedule"/);
   assert.doesNotMatch(html, /schedule\.json|SOURCE_SHEET_ID|INTERNAL_SHEET_ID|docs\.google\.com\/spreadsheets|saveLayout|publishApprovedSnapshot|assignment-form|id="search"|C-901|TEST-01|PRIVATE_SOURCE_IDENTIFIER/);
   assert.doesNotMatch(html, /innerHTML|insertAdjacentHTML/);
+  assert.match(html, /<a class="brand brand-link" href="https:\/\/hiiiodigital\.com\/"/);
+  assert.match(html, /<svg class="brand-logo"[^>]*fill="currentColor"[^>]*aria-hidden="true"/);
+  assert.match(html, /<h1 id="schedule-title" class="sr-only">/);
+  assert.doesNotMatch(html, /class="heading-row"|\/studio-preview\/|@font-face|card-focus-label|data-tone/);
   if (teamspace) {
     assert.match(html, /<title>PM Studio｜團隊專案排程<\/title>/);
     assert.match(html, /<meta name="robots" content="noindex,nofollow">/);

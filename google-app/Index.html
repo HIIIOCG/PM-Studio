@@ -7,161 +7,479 @@
   <title>PM Studio｜專案排程</title>
   <style>
 :root {
-  font-family: "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
-  color-scheme: dark; color: #e4e9ed; background: #161a1e; font-synthesis: none;
-  --muted: #a2afb9; --border: #35414b; --surface: #20262b; --blue: #47aff5;
+  font-family: system-ui, "PingFang TC", "Microsoft JhengHei", sans-serif;
+  color-scheme: dark;
+  color: #e7e7e7;
+  background: #141414;
+  font-synthesis: none;
+  --text: #e7e7e7;
+  --muted: #aaa;
+  --subtle: #939393;
+  --border: #303030;
+  --surface: #191919;
+  --focus: #f0f0f0;
+  --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
 }
 * { box-sizing: border-box; }
 body { margin: 0; }
-button { font: inherit; color: inherit; cursor: pointer; border: 1px solid var(--border); background: #28313a; border-radius: 8px; }
-button:hover { background: #35424c; border-color: #708696; }
-button:disabled { opacity: .4; cursor: default; }
-button:focus-visible, [tabindex]:focus-visible { outline: 2px solid #77c3ff; outline-offset: 3px; }
+button { font: inherit; color: inherit; cursor: pointer; border: 0; border-radius: 2px; background: transparent; transition: background-color .15s, color .15s, border-color .15s; }
+button:hover { color: #fff; }
+button:disabled { opacity: .35; cursor: default; }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 [hidden] { display: none !important; }
-.app { max-width: 1640px; margin: auto; padding: 38px 40px 24px; }
-.app-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 28px; }
-.brand { margin: 0 0 10px; font-size: 11px; letter-spacing: .16em; font-weight: 700; color: #b8c6d1; }
-.brand span { margin-left: 8px; font-size: 10px; color: #778c9c; }
-h1 { margin: 0; font-size: 29px; letter-spacing: .025em; font-weight: 650; }
-.language-button { background: transparent; padding: 8px 12px; color: var(--muted); font-size: 12px; }
-.preview-note { padding: 11px 15px; border: 1px solid #78683d; border-radius: 8px; color: #dcc895; font-size: 12px; }
-.schedule { border: 1px solid var(--border); border-radius: 16px; background: var(--surface); overflow: hidden; }
-.toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; padding: 18px 20px; }
-.date-navigation { display: flex; gap: 5px; }
-.date-navigation button { height: 34px; }
-.arrow-button { width: 35px; font-size: 17px; }
-.today-button { padding: 0 13px; font-size: 12px; }
-.date-range { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.legend { display: flex; flex-wrap: wrap; gap: 10px 15px; color: var(--muted); margin-left: auto; font-size: 11px; }
-.legend span { display: inline-flex; align-items: center; gap: 6px; }
-.legend i { width: 15px; height: 8px; border: 1px solid #a7becf; border-radius: 3px; background: #314354; }
-.legend .correction-key { border-color: #d5a373; background: repeating-linear-gradient(135deg,#594131,#594131 3px,#413329 3px,#413329 6px); }
-.legend .reservation-key { border: 1px dashed #bbb4df; background: #3c384e; }
-.legend .follow-up-key { position: relative; width: 19px; height: 2px; border: 0; background: #d1b676; }
-.legend .follow-up-key::after { content: ''; position: absolute; right: 0; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #e0c585; }
-.load-notice { padding: 16px 20px; color: #afc7d7; font-size: 13px; display: flex; align-items: center; gap: 14px; border-top: 1px solid var(--border); }
-.load-notice.error { color: #efbaa3; background: #322a28; }
-.load-notice.warning { color: #d8c099; }
-#retry { font-size: 12px; padding: 6px 12px; }
-.timeline-grid { display: grid; grid-template-columns: 130px minmax(0,1fr); border-top: 1px solid var(--border); }
-.workspace-labels { z-index: 2; background: #222a30; border-right: 1px solid #4a5965; }
-.label-axis { height: 68px; padding: 25px 18px; color: #8fa3b2; font-size: 11px; border-bottom: 1px solid var(--border); }
-.workspace-label { padding: 21px 17px; border-bottom: 1px solid var(--border); }
-.workspace-letter { display: block; font-size: 23px; color: #dbe7ee; font-weight: 500; }
-.workspace-description { display: block; margin-top: 6px; line-height: 1.5; color: #90a5b5; font-size: 10px; }
-.timeline-viewport { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-color: #566b7c #202b33; scrollbar-width: thin; }
-.timeline-canvas { position: relative; isolation: isolate; min-height: 452px; }
-.grid-day { position: absolute; top: 38px; bottom: 0; border-left: 1px solid #2c3842; z-index: -2; pointer-events: none; }
-.grid-day.weekend { background: #1c252d; }
-.grid-day.week-start { border-left-color: #415362; }
-.month-label { position: absolute; top: 0; height: 38px; padding: 11px 12px; border-left: 1px solid #4b5c69; border-bottom: 1px solid var(--border); color: #bbcbd7; font-size: 12px; white-space: nowrap; overflow: hidden; background: #222b33; }
-.day-label { position: absolute; top: 38px; height: 30px; padding: 8px 0 0 3px; text-align: left; color: #8197a8; font-size: 10px; overflow: hidden; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.app { max-width: 1584px; margin: auto; padding: 32px 56px 28px; }
+.app-header { margin-bottom: 40px; }
+.header-top { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+.language-button { min-height: 40px; padding: 8px 0 8px 12px; color: #bcbcbc; font-size: 12px; }
+.language-button::after { content: '↗'; margin-left: 10px; color: #777; }
+.language-button:hover { color: #fff; }
+h1 { flex-shrink: 0; margin: 0; font-size: 42px; font-weight: 450; line-height: 1.25; letter-spacing: .025em; }
+.preview-note { margin: -16px 0 28px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.preview-note::before { content: ''; display: inline-block; width: 5px; height: 5px; margin: 0 9px 2px 0; border-radius: 50%; background: #a4a4a4; }
+.schedule { min-width: 0; }
+.toolbar { display: flex; align-items: center; justify-content: flex-end; padding: 0 0 24px; }
+.date-navigation { display: flex; align-items: center; gap: 8px; }
+.date-navigation button { height: 48px; border: 1px solid #606060; border-radius: 6px; background: #2b2b2b; color: #eee; box-shadow: 0 2px 0 #080808, inset 0 1px 0 #ffffff09; }
+.date-navigation button:hover { background: #3a3a3a; border-color: #aaa; color: #fff; }
+.date-navigation button:active { transform: translateY(1px); background: #222; box-shadow: inset 0 2px 4px #0005; }
+.arrow-button { width: 56px; font-size: 22px; }
+.date-navigation .today-button { min-width: 88px; padding: 0 24px; border-color: #ddd; background: #ddd; color: #202020; font-size: 13px; font-weight: 650; }
+.date-navigation .today-button:hover { border-color: #fff; background: #f4f4f4; color: #111; }
+.date-navigation .today-button:active { border-color: #bbb; background: #bbb; color: #111; }
+.schedule-key { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 12px 26px; margin-left: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px 20px; color: var(--muted); font-size: 11px; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { width: 14px; height: 8px; border: 1px solid #777; border-radius: 1px; background: #2c2c2c; }
+.legend .correction-key { border-color: #999; background: repeating-linear-gradient(135deg,#4a4a4a,#4a4a4a 1px,#252525 1px,#252525 4px); }
+.legend .reservation-key { border: 1px dashed #999; background: #202020; }
+.legend .follow-up-key { position: relative; width: 18px; height: 1px; border: 0; background: #aaa; }
+.legend .follow-up-key::after { content: ''; position: absolute; right: 0; top: -2px; width: 5px; height: 5px; border-radius: 50%; background: #ddd; }
+.visible-count { margin-left: auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.load-notice { display: flex; align-items: center; gap: 16px; min-height: 64px; padding: 18px 0; border-top: 1px solid var(--border); color: #ccc; font-size: 13px; line-height: 1.8; }
+.load-notice.error, .load-notice.warning { border-left: 2px solid #aaa; padding-left: 16px; }
+#retry { padding: 6px 12px; border: 1px solid #555; font-size: 12px; }
+.timeline-grid { display: grid; grid-template-columns: 142px minmax(0,1fr); border-top: 1px solid #494949; border-bottom: 1px solid #494949; }
+.workspace-labels { z-index: 2; background: #141414; border-right: 1px solid #383838; }
+.label-axis { height: 68px; padding: 26px 0; border-bottom: 1px solid var(--border); color: var(--subtle); font-size: 11px; }
+.workspace-label { padding: 18px 18px 18px 0; border-bottom: 1px solid var(--border); }
+.workspace-label:last-child { border-bottom: 0; }
+.workspace-letter { display: block; color: #dedede; font-size: 27px; font-weight: 350; line-height: 1.2; }
+.workspace-description { display: block; margin-top: 7px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.timeline-viewport { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: #515151 #191919; }
+.timeline-canvas { position: relative; isolation: isolate; min-height: 420px; background: #171717; }
+.grid-day { position: absolute; top: 38px; bottom: 0; z-index: -2; pointer-events: none; }
+.grid-day.weekend { background: #ffffff02; }
+.grid-day.week-start { border-left: 1px solid #ffffff09; }
+.month-label { position: absolute; top: 0; height: 38px; padding: 11px 14px; overflow: hidden; border-left: 1px solid #3b3b3b; border-bottom: 1px solid var(--border); background: #1c1c1c; color: #d0d0d0; font-size: 12px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.day-label { position: absolute; top: 38px; height: 30px; padding: 8px 0 0 7px; overflow: hidden; color: var(--subtle); text-align: left; font-family: var(--mono); font-size: 10px; }
 .row-rule { position: absolute; left: 0; right: 0; border-bottom: 1px solid var(--border); pointer-events: none; }
-.today-line { position: absolute; top: 38px; bottom: 0; border-left: 2px solid #2eaafa; pointer-events: none; z-index: 2; }
-.today-label { position: absolute; top: 6px; left: 5px; font-size: 9px; color: #67bdf7; background: #1e3546; padding: 3px 5px; border-radius: 4px; white-space: nowrap; }
-.project-card { position: absolute; height: 78px; min-width: 0; border: 1px solid #8ea6b7; border-radius: 9px; background: #2b3945; color: #e4edf4; padding: 0; overflow: hidden; text-align: left; box-shadow: 0 3px 9px #0002; }
-.card-content { position: absolute; top: 11px; left: 12px; right: 12px; pointer-events: none; }
-.project-card.correction { background: repeating-linear-gradient(135deg,#423329,#423329 8px,#3a302a 8px,#3a302a 16px); border-color: #c59366; }
-.project-card.reservation { border: 1px dashed #bbb4df; background: #3c384e; }
-.project-card.month-start { border-left: 3px dotted #bbcbd7; }
-.project-card.month-end { border-right: 3px dotted #bbcbd7; }
-.project-card:focus-visible, .project-card:hover { z-index: 5; background: #344958; }
-.project-card.correction:focus-visible, .project-card.correction:hover { background: #594334; }
-.project-card.reservation:focus-visible, .project-card.reservation:hover { background: #504961; }
-.follow-up-stem { position: absolute; height: 2px; background: #d1b676; pointer-events: none; z-index: 1; }
-.follow-up-stem.clipped-start::before { content: ''; position: absolute; left: 1px; top: -3px; width: 7px; height: 7px; border-left: 2px solid #d1b676; border-bottom: 2px solid #d1b676; transform: rotate(45deg); }
-.follow-up-endpoint { position: absolute; width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; padding: 0; z-index: 3; }
-.follow-up-endpoint::before { content: ''; position: absolute; left: 15px; top: 15px; width: 14px; height: 14px; border: 2px solid #f1da9f; border-radius: 50%; background: #c9a75f; box-shadow: 0 0 0 4px #20262b; }
-.follow-up-endpoint:hover, .follow-up-endpoint:focus-visible { background: #d1b67622; }
-.follow-up-label { position: absolute; left: 39px; top: 14px; padding: 2px 5px; border-radius: 4px; background: #20262b; color: #ddc88f; white-space: nowrap; font-size: 11px; line-height: 1.3; }
-.project-details { width: min(660px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 25px; border: 1px solid #60788a; border-radius: 14px; color: #e4edf4; background: #263540; box-shadow: 0 16px 50px #0008; }
-.project-details::backdrop { background: #09121bbb; }
-.project-details h2 { font-size: 20px; color: #e4edf4; padding-right: 30px; overflow-wrap: anywhere; line-height: 1.5; }
-.project-fields { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 11px 14px; margin: 18px 0; font-size: 13px; line-height: 1.7; }
-.project-fields dt { color: #a6bfce; }
-.project-fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.details-close { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; font-size: 21px; line-height: 1; }
-.details-customer { color: #a6bfce; font-size: 13px; margin: 8px 0 20px; }
-.details-dates { font-size: 13px; line-height: 1.8; font-variant-numeric: tabular-nums; }
-.details-workspaces { color: #a6bfce; font-size: 12px; line-height: 1.8; margin-bottom: 0; }
-.details-statuses { display: flex; flex-wrap: wrap; gap: 7px; margin: 17px 0; }
-.status-tag { color: #edd7a2; border: 1px solid #7f704e; border-radius: 6px; background: #39382f; padding: 6px 8px; font-size: 12px; }
-.details-note { color: #a6bfce; font-size: 12px; line-height: 1.7; }
-.card-heading { display: flex; gap: 9px; align-items: center; white-space: nowrap; line-height: 1.4; }
-.card-id { font-weight: 650; font-size: 13px; }
-.customer-code { font-size: 10px; color: #a6bfce; font-weight: 400; }
-.card-dates { display: block; white-space: nowrap; margin-top: 6px; font-size: 10px; color: #bbcbd6; font-variant-numeric: tabular-nums; }
-.card-meta { display: block; white-space: nowrap; margin-top: 4px; font-size: 9px; color: #93a9b9; }
-.empty-row { position: absolute; left: 16px; color: #647d8e; font-size: 11px; }
-.timeline-footer { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 13px 20px; border-top: 1px solid var(--border); color: #849aa9; font-size: 10px; }
-.pending-section { margin-top: 28px; }
-.section-heading { display: flex; align-items: center; gap: 9px; margin-bottom: 13px; }
-h2 { margin: 0; font-size: 15px; font-weight: 600; color: #b7c7d3; }
-.count-badge { border: 1px solid var(--border); border-radius: 12px; padding: 1px 7px; font-size: 10px; color: #91a7b6; }
-.pending-projects { display: grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap: 10px; }
-.pending-card { border: 1px solid var(--border); background: #1c242b; padding: 14px 16px; border-radius: 10px; }
-.pending-card .card-heading { flex-wrap: wrap; white-space: normal; }
-.pending-details { margin-top: 11px; padding: 6px 10px; font-size: 11px; }
-.pending-reason { font-size: 11px; color: #b9a38a; margin: 8px 0 5px; line-height: 1.6; }
-.pending-dates { font-size: 10px; line-height: 1.8; color: #8fa6b6; margin: 0; font-variant-numeric: tabular-nums; }
-.page-footer { margin-top: 22px; color: #7d929f; font-size: 11px; line-height: 1.6; }
+.today-line { position: absolute; top: 38px; bottom: 0; z-index: 2; border-left: 1px solid #a7a7a7; pointer-events: none; }
+.today-label { position: absolute; top: 4px; left: 5px; padding: 3px 5px; border-radius: 1px; background: #dedede; color: #191919; font-size: 9px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+
+.project-card { position:absolute; height:48px; min-width:0; padding:0; text-align:left; }
+.card-content { position:absolute; top:6px; bottom:5px; left:12px; right:9px; overflow:hidden; pointer-events:none; }
+.card-heading { display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; line-height:17px; white-space:nowrap; }
+.project-card .card-heading { padding-right:82px; }
+.card-id { flex-shrink:0; font-family:var(--mono); font-size:14px; font-weight:650; line-height:17px; letter-spacing:-.025em; }
+.card-meta { display:block; margin-top:2px; padding-right:82px; overflow:hidden; line-height:15px; letter-spacing:-.015em; text-overflow:ellipsis; white-space:nowrap; }
+.project-card .project-name { font-size:11px; font-weight:550; line-height:17px; }
+.card-phase { position:absolute; top:6px; right:0; flex-shrink:0; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:600; line-height:14px; }
+.project-card.correction .card-phase, .project-card.reservation .card-phase { position:static; padding:1px 8px; }
+.project-card.correction .card-heading, .project-card.correction .card-meta, .project-card.reservation .card-heading, .project-card.reservation .card-meta { padding-right:0; }
+.project-card:hover, .project-card:focus-visible { z-index:6; }
+.project-card.is-compact .card-content { left:9px; right:8px; }
+.project-card.is-compact .card-heading, .project-card.is-compact .card-meta { padding-right:0; }
+.project-card.is-compact .card-phase { display:none; }
+.project-card.is-narrow .card-content { visibility:hidden; }
+.follow-up-stem { position: absolute; height: 1px; background: #aaa; pointer-events: none; z-index: 1; }
+.follow-up-stem.clipped-start::before { content: ''; position: absolute; left: 1px; top: -3px; width: 6px; height: 6px; border-left: 1px solid #aaa; border-bottom: 1px solid #aaa; transform: rotate(45deg); }
+.follow-up-endpoint { position: absolute; width: 44px; height: 44px; border: 0; border-radius: 50%; padding: 0; background: transparent; z-index: 3; }
+.follow-up-endpoint::before { content: ''; position: absolute; left: 16px; top: 16px; width: 12px; height: 12px; border: 2px solid #ddd; border-radius: 50%; background: #777; box-shadow: 0 0 0 4px #171717; }
+.follow-up-endpoint:hover, .follow-up-endpoint:focus-visible { background: #ffffff0a; }
+.follow-up-label { position: absolute; left: 39px; top: 13px; padding: 2px 5px; background: #171717; color: #c8c8c8; white-space: nowrap; font-family: var(--mono); font-size: 11px; line-height: 1.4; }
+.empty-row { position: absolute; left: 18px; color: var(--subtle); font-size: 11px; }
+.timeline-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; padding: 18px 0 0; color: var(--subtle); font-size: 10px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.sync-status { flex-shrink: 0; }
+.pending-section { margin-top: 44px; }
+.section-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 18px; }
+h2 { margin: 0; color: #ddd; font-size: 16px; font-weight: 500; }
+.count-badge { color: var(--subtle); font-family: var(--mono); font-size: 12px; }
+.pending-projects { border-top: 1px solid #494949; }
+.pending-card { display: grid; grid-template-columns: minmax(200px,1.25fr) minmax(160px,1fr) minmax(210px,1.1fr) 36px; align-items: center; gap: 22px; min-width: 0; padding: 20px 0; border-bottom: 1px solid var(--border); }
+.pending-identity { min-width: 0; }
+.pending-card .card-heading { flex-wrap: wrap; gap: 4px 10px; white-space: normal; }
+.pending-card .customer-code { display: block; margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.pending-reason { margin: 0; color: #c4c4c4; font-size: 12px; line-height: 1.8; }
+.pending-schedule { min-width: 0; }
+.pending-dates { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.9; font-variant-numeric: tabular-nums; }
+.pending-details { position: relative; width: 36px; height: 40px; overflow: hidden; font-size: 0; color: #cfcfcf; }
+.details-arrow { font-size: 21px; line-height: 1; }
+.pending-details:hover { background: #2b2b2b; }
+.page-footer { margin-top: 28px; color: var(--subtle); font-size: 11px; line-height: 1.8; }
+.project-details { width: min(680px,calc(100vw - 32px)); max-height: calc(100dvh - 40px); padding: 32px; overflow: auto; border: 1px solid #555; border-radius: 5px; background: #1c1c1c; color: var(--text); box-shadow: 0 32px 100px #0008; scrollbar-width: thin; scrollbar-color: #666 #1c1c1c; }
+.project-details::backdrop { background: #000b; }
+.project-details h2 { padding-right: 40px; color: #f3f3f3; font-size: 24px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.details-close { position: absolute; top: 18px; right: 18px; width: 40px; height: 40px; color: #bbb; font-size: 24px; line-height: 1; }
+.details-close:hover { background: #303030; color: #fff; }
+.details-customer { margin: 9px 0 28px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.project-fields { display: grid; grid-template-columns: 126px minmax(0,1fr); gap: 0 24px; margin: 0 0 24px; font-size: 13px; line-height: 1.85; }
+.project-fields dt { padding: 13px 0; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+.project-fields dd { margin: 0; padding: 13px 0; border-top: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
+.details-dates { font-family: var(--mono); font-size: 12px; line-height: 1.9; }
+.details-workspaces { margin: 20px 0 0; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.details-statuses { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
+.status-tag { padding: 5px 9px; border: 1px solid #666; border-radius: 2px; color: #ddd; font-size: 12px; }
+.details-note { color: var(--muted); font-size: 12px; line-height: 1.8; }
+@media (max-width: 1050px) {
+  .app { padding-left: 32px; padding-right: 32px; }
+  .pending-card { grid-template-columns: minmax(180px,1fr) minmax(140px,1fr) 36px; gap: 8px 24px; }
+  .pending-schedule { grid-column: 2; }
+  .pending-identity { grid-row: 1 / span 2; }
+  .pending-details { grid-column: 3; grid-row: 1 / span 2; }
+}
 @media (max-width: 700px) {
-  .app { padding: 23px 12px 18px; }
-  .app-header { margin-bottom: 20px; }
-  .brand { font-size: 10px; }
-  .brand span { display: none; }
-  h1 { font-size: 23px; }
-  .toolbar { padding: 12px; gap: 10px; }
-  .date-range { font-size: 11px; }
-  .legend { width: 100%; margin-left: 0; font-size: 10px; }
-  .timeline-grid { grid-template-columns: 82px minmax(0,1fr); }
-  .workspace-label { padding: 17px 10px; }
-  .workspace-letter { font-size: 21px; }
-  .workspace-description { font-size: 9px; }
-  .label-axis { padding: 25px 10px; font-size: 10px; }
-  .timeline-footer { padding: 12px; line-height: 1.6; }
-  .pending-projects { grid-template-columns: 1fr; }
-  .project-fields { grid-template-columns: 1fr; gap: 2px; }
-  .project-fields dd { margin-bottom: 10px; }
+  .app { padding: 20px 20px 24px; }
+  .app-header { margin-bottom: 28px; }
+  .language-button { min-height: 36px; font-size: 11px; }
+  h1 { font-size: 31px; }
+  :lang(en) h1 { font-size: clamp(22px,5.8vw,31px); letter-spacing: -.035em; }
+  .preview-note { margin: -10px 0 24px; font-size: 10px; }
+  .toolbar { padding-bottom: 20px; }
+  .date-navigation button { height: 46px; }
+  .arrow-button { width: 50px; font-size: 21px; }
+  .date-navigation .today-button { min-width: 82px; padding: 0 20px; font-size: 13px; }
+  .schedule-key { width: 100%; gap: 12px 16px; margin-left: 0; }
+  .legend { gap: 8px 13px; font-size: 10px; }
+  .legend span { gap: 5px; }
+  .visible-count { font-size: 10px; }
+  .timeline-grid { grid-template-columns: 76px minmax(0,1fr); }
+  .label-axis { font-size: 10px; }
+  .workspace-label { padding: 14px 10px 10px 0; }
+  .workspace-letter { font-size: 24px; }
+  .workspace-description { margin-top: 5px; font-size: 10px; line-height: 1.5; }
+  .month-label { padding-left: 9px; font-size: 11px; }
+  .timeline-footer { gap: 14px; padding-top: 16px; font-size: 9px; }
+  .pending-section { margin-top: 32px; }
+  .section-heading { margin-bottom: 15px; }
+  h2 { font-size: 15px; }
+  .pending-card { grid-template-columns: minmax(0,1fr) 36px; gap: 8px 12px; padding: 18px 0; }
+  .pending-identity { grid-column: 1; grid-row: auto; }
+  .pending-reason, .pending-schedule { grid-column: 1; }
+  .pending-reason { margin-top: 4px; font-size: 11px; }
+  .pending-details { grid-column: 2; grid-row: 1; }
+  .pending-dates { font-size: 10px; }
+  .project-details { padding: 26px 22px; max-height: calc(100dvh - 24px); }
+  .project-details h2 { font-size: 21px; }
+  .details-close { top: 14px; right: 14px; }
+  .project-fields { grid-template-columns: 1fr; gap: 0; }
+  .project-fields dt { padding: 12px 0 4px; font-size: 11px; }
+  .project-fields dd { padding: 0 0 12px; border-top: 0; }
+  .details-dates { font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+}
+
+/* Shared schedule presentation. No external assets are required. */
+html {
+  color:#ededed; background:#151515; --text:#ededed; --muted:#ababab; --subtle:#9a9a9a; --border:#313131; --surface:#202020; --focus:#dedede;
+}
+.app { max-width:1600px; padding:0 32px 32px; }
+.app-header { margin-bottom:14px; }
+.header-top { min-height:76px; border-bottom:1px solid #303030; }
+.language-button { min-height:38px; padding:0 13px; border:1px solid #3b3b3b; border-radius:10px; background:#272727; color:#cecece; font-size:11px; }
+.language-button:hover { background:#333333; color:#fff; }
+h1 { font-size:32px; font-weight:650; letter-spacing:-.025em; }
+.preview-note { margin:0 0 23px; color:#9a9a9a; font-size:10px; }
+.preview-note::before { width:5px; height:5px; background:#aaaaaa; }
+.toolbar { display:contents; }
+.date-navigation { gap:7px; }
+.date-navigation button { height:44px; border:1px solid #434343; border-radius:11px; background:#292929; color:#e3e3e3; box-shadow:0 2px 3px #0002,inset 0 1px 0 #ffffff05; }
+.date-navigation button:hover { border-color:#7b7b7b; background:#353535; color:#fff; }
+.date-navigation .arrow-button { width:44px; font-size:20px; }
+.date-navigation .today-button { min-width:78px; padding:0 18px; border-color:#8b8b8b; background:#6e6e6e; color:#fff; font-size:12px; }
+.date-navigation .today-button:hover { background:#747474; }
+.timeline-grid { grid-template-columns:188px minmax(0,1fr); padding:10px 10px 0; border:1px solid #333333; border-radius:17px; background:#1b1b1b; }
+.workspace-labels { background:#1b1b1b; border-right:1px solid #313131; border-radius:12px 0 0 0; }
+.label-axis { padding:25px 14px; border-color:#313131; color:#9a9a9a; font-size:11px; }
+.workspace-label { position:relative; display:flex; align-items:flex-start; gap:10px; padding:26px 27px 0 14px; border-color:#ffffff07; }
+.workspace-label::before { content:''; position:absolute; z-index:0; left:0; right:15px; top:11px; height:76px; border:1px solid #383838; border-radius:12px; background:#262626; box-shadow:0 3px 9px #0001; }
+.workspace-letter { position:relative; display:flex; align-items:center; justify-content:center; flex:0 0 34px; width:34px; height:34px; border:1px solid #525252; border-radius:10px; background:#3e3e3e; color:#e6e6e6; font-size:16px; font-weight:650; }
+.workspace-description { position:relative; margin-top:7px; color:#cccccc; font-size:11px; font-weight:500; line-height:1.65; }
+.timeline-viewport { scrollbar-color:#525252 #1d1d1d; }
+.timeline-canvas { background:#1b1b1b; }
+.month-label { padding-top:10px; border-color:#343434; background:#242424; color:#dedede; font-size:12px; font-weight:600; }
+.day-label { color:#8f8f8f; }
+.grid-day.weekend { background:transparent; }
+.grid-day.week-start { border-color:#ffffff08; }
+.row-rule { border-color:#ffffff08; }
+.today-line { border-color:#a0a0a099; }
+.today-label { top:5px; left:5px; padding:3px 6px; border-radius:6px; background:#a7a7a7; color:#252525; font-size:9px; }
+
+.follow-up-stem { background:#b4b4b4; }
+.follow-up-stem.clipped-start::before { border-color:#b4b4b4; }
+.follow-up-endpoint::before { border-color:#d5d5d5; background:#8a8a8a; box-shadow:0 0 0 4px #1b1b1b; }
+.follow-up-label { border-radius:5px; background:#1b1b1b; color:#c8c8c8; }
+.timeline-footer { padding:17px 2px 0; color:#9a9a9a; }
+.legend { color:#b2b2b2; }
+.legend i { border-color:#b1b1b1; border-radius:4px; background:#8b8b8b; }
+.legend .correction-key { background:repeating-linear-gradient(135deg,#a6a6a6,#a6a6a6 2px,#494949 2px,#494949 4px); }
+.legend .reservation-key { border:1px dashed #afafaf; background:#3a3a3a; }
+.legend .follow-up-key { border:0; border-radius:0; background:#b4b4b4; }
+.legend .follow-up-key::after { background:#d5d5d5; }
+.visible-count { color:#b2b2b2; }
+.pending-section { margin-top:34px; }
+.section-heading { margin-bottom:14px; }
+h2 { color:#e5e5e5; font-size:17px; font-weight:600; }
+.count-badge { padding:3px 7px; border-radius:6px; background:#353535; color:#c7c7c7; font-size:11px; }
+.pending-projects { padding:0 20px; border:1px solid #343434; border-radius:14px; background:#202020; }
+.pending-card { padding:18px 0; border-color:#393939; }
+.pending-card:last-child { border-bottom:0; }
+.pending-card .card-id { color:#e4e4e4; font-size:13px; font-weight:600; }
+.pending-reason { color:#cdcdcd; }
+.pending-details { border-radius:10px; background:#313131; color:#d5d5d5; }
+.pending-details:hover { background:#464646; }
+.project-details { border:1px solid #515151; border-radius:18px; background:#232323; color:#ededed; }
+.details-close { border-radius:10px; background:#353535; color:#dddddd; }
+.details-close:hover { background:#494949; }
+.status-tag { border-color:#747474; border-radius:8px; background:#81818122; color:#d0d0d0; }
+.page-footer { margin-top:24px; color:#9a9a9a; font-size:10px; }
+@media (max-width:1050px) {
+  .app { padding-left:24px; padding-right:24px; }
+  .timeline-grid { grid-template-columns:160px minmax(0,1fr); }
+  .workspace-label { gap:8px; padding-left:11px; padding-right:22px; }
+}
+@media (max-width:700px) {
+  .app { padding:0 16px 24px; }
+  .header-top { min-height:64px; }
+  .language-button { min-height:34px; padding:0 10px; font-size:10px; }
+  h1 { font-size:26px; }
+  :lang(en) h1 { font-size:24px; }
+  .date-navigation { gap:5px; }
+  .date-navigation button { height:44px; border-radius:10px; }
+  .date-navigation .arrow-button { width:44px; font-size:19px; }
+  .date-navigation .today-button { min-width:72px; padding:0 13px; font-size:11px; }
+  .preview-note { margin-bottom:18px; font-size:9px; }
+  .timeline-grid { grid-template-columns:88px minmax(0,1fr); padding:6px 6px 0; border-radius:13px; }
+  .label-axis { padding:25px 8px; font-size:10px; }
+  .workspace-label { display:block; padding:16px 12px 0 8px; }
+  .workspace-label::before { left:0; right:7px; top:6px; bottom:6px; height:auto; max-height:100px; border-radius:10px; }
+  .workspace-letter { width:28px; height:28px; border-radius:8px; font-size:13px; }
+  .workspace-description { margin-top:7px; font-size:9px; line-height:1.5; }
+  .month-label { font-size:10px; }
+  .pending-projects { padding:0 14px; }
+  .pending-details { width:34px; height:36px; }
+  .project-details { padding:26px 22px; }
+}
+
+h1 { font-size:31px; font-weight:600; letter-spacing:-.035em; }
+.date-navigation .today-button { border-color:#e7e7e7; background:#e7e7e7; color:#232323; }
+.date-navigation .today-button:hover { border-color:#fff; background:#fafafa; color:#111; }
+.today-label { background:#e5e5e5; color:#262626; }
+.timeline-grid { grid-template-columns:96px minmax(0,1fr); }
+.label-axis { padding-left:8px; padding-right:8px; text-align:center; font-size:11px; }
+.workspace-label { display:block; position:relative; padding:4px 8px 0 0; }
+.workspace-label::before { content:none; }
+.workspace-trigger { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:5px; width:100%; height:78px; padding:8px 5px 7px; border:1px solid #383838; border-radius:11px; background:#232323; color:#dedede; box-shadow:0 2px 5px #0002; user-select:none; }
+.workspace-trigger:hover, .workspace-trigger.is-help-open { border-color:#777; background:#2c2c2c; color:#f1f1f1; }
+.workspace-trigger:focus-visible { outline:2px solid #ededed; outline-offset:2px; }
+.workspace-trigger .workspace-letter { display:flex; flex:0 0 28px; width:28px; height:28px; margin:0; border:1px solid #535353; border-radius:8px; background:#3a3a3a; color:#f2f2f2; font-size:14px; font-weight:650; line-height:1; }
+.workspace-trigger .workspace-description { margin:0; max-width:100%; color:#cecece; font-size:10.5px; font-weight:450; text-align:center; line-height:1.4; overflow-wrap:normal; }
+.workspace-info { position:absolute; top:7px; right:6px; color:#a8a8a8; font-size:0; line-height:1; }
+.workspace-info::after { content:'ⓘ'; font-size:10px; }
+.workspace-help-tooltip { position:fixed; z-index:1000; width:280px; max-width:calc(100vw - 16px); padding:15px 16px; border:1px solid #626262; border-radius:12px; background:#282828; color:#e3e3e3; box-shadow:0 10px 32px #0008; font-size:12px; font-weight:400; line-height:1.8; text-align:left; white-space:normal; overflow-wrap:anywhere; }
+.workspace-help-title { display:block; margin-bottom:6px; color:#fafafa; font-size:13px; font-weight:600; line-height:1.65; }
+.workspace-help-copy { display:block; color:#c7c7c7; }
+@media (max-width:1050px) {
+  .timeline-grid { grid-template-columns:96px minmax(0,1fr); }
+}
+@media (max-width:700px) {
+  h1 { font-size:26px; }
+  .timeline-grid { grid-template-columns:80px minmax(0,1fr); }
+  .workspace-label { padding:4px 6px 0 0; }
+  .workspace-trigger { padding-left:4px; padding-right:4px; border-radius:9px; }
+  .workspace-trigger .workspace-description { font-size:10px; line-height:1.4; }
+  .workspace-trigger .workspace-letter { width:26px; height:26px; flex-basis:26px; font-size:13px; }
+  .workspace-info { top:6px; right:5px; }
+  .workspace-info::after { font-size:9px; }
+}
+
+html .project-card {
+  --project-fill:#303030;
+  --project-hover:#363636;
+  --project-border:#777;
+  --project-accent:#ddd;
+  --project-reservation:#252525;
+  --glass-solid:#303030;
+  --glass-film:rgb(255 255 255 / .065);
+  --glass-pattern:linear-gradient(transparent,transparent);
+  border:1px solid rgb(255 255 255 / .29);
+  border-top-color:rgb(255 255 255 / .47);
+  border-bottom-color:rgb(255 255 255 / .17);
+  border-radius:12px;
+  background:transparent;
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+  color:#f7f7f7;
+  box-shadow:0 3px 8px rgb(0 0 0 / .18);
+  transition:border-color .16s ease,box-shadow .16s ease;
+}
+html .project-card::before,
+html .project-card::after { display:none; }
+html .project-glass-surface {
+  --project-refraction:blur(1.5px);
+  position:absolute;
+  inset:0;
+  z-index:0;
+  overflow:hidden;
+  border-radius:inherit;
+  background-color:var(--glass-film);
+  background-image:var(--glass-pattern);
+  -webkit-backdrop-filter:var(--project-refraction) blur(.8px);
+  backdrop-filter:var(--project-refraction) blur(.8px);
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .14),inset 1px 0 0 rgb(255 255 255 / .055),inset -1px 0 0 rgb(255 255 255 / .055),inset 0 -1px 0 rgb(0 0 0 / .08);
+  pointer-events:none;
+}
+html .project-card .card-content { z-index:1; }
+html .project-card .card-id,
+html .project-card .project-name { color:#f7f7f7; text-shadow:0 1px 1px rgb(0 0 0 / .2); }
+html .project-card .card-meta { color:#f0f0f0; font-size:12px; font-weight:500; text-shadow:0 1px 1px rgb(0 0 0 / .2); }
+html .project-card .card-phase {
+  border:1px solid rgb(255 255 255 / .17);
+  background:rgb(0 0 0 / .15);
+  color:#f7f7f7;
+  box-shadow:none;
+  text-shadow:none;
+}
+html .project-card.correction {
+  --glass-pattern:repeating-linear-gradient(135deg,transparent 0 5px,rgb(255 255 255 / .07) 5px 7px);
+  border-color:rgb(255 255 255 / .29);
+  background:transparent;
+}
+html .project-card.reservation {
+  --glass-film:rgb(255 255 255 / .025);
+  border:1px dashed rgb(255 255 255 / .4);
+  background:transparent;
+  box-shadow:0 2px 5px rgb(0 0 0 / .1);
+}
+html .project-card.month-start { border-left:2px dotted rgb(255 255 255 / .63); }
+html .project-card.month-end { border-right:2px dotted rgb(255 255 255 / .63); }
+html .project-card:hover,
+html .project-card:focus-visible {
+  --glass-film:rgb(255 255 255 / .095);
+  background:transparent;
+  border-color:rgb(255 255 255 / .58);
+  box-shadow:0 4px 10px rgb(0 0 0 / .22);
+}
+html .project-card:focus-visible { outline:2px solid #e9e9e9; outline-offset:2px; }
+html .project-card.reservation:hover,
+html .project-card.reservation:focus-visible { --glass-film:rgb(255 255 255 / .05); border-style:dashed; border-color:rgb(255 255 255 / .58); }
+html .project-card.month-start:is(:hover,:focus-visible) { border-left-style:dotted; }
+html .project-card.month-end:is(:hover,:focus-visible) { border-right-style:dotted; }
+html .project-card.is-narrow { border-radius:8px; background:transparent; border-color:rgb(255 255 255 / .42); }
+html .project-card.is-narrow.correction { --glass-pattern:repeating-linear-gradient(135deg,transparent 0 3px,rgb(255 255 255 / .15) 3px 5px); background:transparent; }
+html .project-card.is-narrow.reservation { background:transparent; border-style:dashed; border-color:rgb(255 255 255 / .4); }
+html .project-card:is(.is-narrow,.reservation,.correction).month-start,
+html .project-card:is(.is-narrow,.reservation,.correction).month-start:is(:hover,:focus-visible) { border-left:2px dotted rgb(255 255 255 / .63); }
+html .project-card:is(.is-narrow,.reservation,.correction).month-end,
+html .project-card:is(.is-narrow,.reservation,.correction).month-end:is(:hover,:focus-visible) { border-right:2px dotted rgb(255 255 255 / .63); }
+html .grid-day.week-start { border-color:rgb(255 255 255 / .035); }
+html .grid-day.weekend { background:transparent; }
+html .month-label { background:#1e1e1e; border-color:#2c2c2c; color:#c9c9c9; font-weight:500; }
+html .row-rule { border-color:rgb(255 255 255 / .025); }
+@media (max-width:700px) {
+  html .project-card .card-meta { font-size:11px; }
+}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+  html .project-glass-surface { background-color:var(--glass-solid); }
+  html .project-card.reservation .project-glass-surface { background-color:#252525; }
+}
+@media (prefers-reduced-transparency:reduce) {
+  html .project-glass-surface { -webkit-backdrop-filter:none; backdrop-filter:none; background-color:var(--glass-solid); box-shadow:none; }
+  html .project-card.reservation .project-glass-surface { background-color:#252525; }
+}
+@media (prefers-contrast:more) {
+  html .project-card,
+  html .project-card:is(.is-narrow,.reservation,.correction,.month-start,.month-end),
+  html .project-card:is(:hover,:focus-visible),
+  html .project-card:is(.is-narrow,.reservation,.correction,.month-start,.month-end):is(:hover,:focus-visible),
+  html .project-card:is(.is-narrow,.reservation,.correction):is(.month-start,.month-end),
+  html .project-card:is(.is-narrow,.reservation,.correction):is(.month-start,.month-end):is(:hover,:focus-visible),
+  html .project-card.is-narrow.reservation,
+  html .project-card.is-narrow.reservation:is(.month-start,.month-end),
+  html .project-card.is-narrow.reservation:is(.month-start,.month-end):is(:hover,:focus-visible) { border-color:#dedede; box-shadow:none; }
+  html .project-glass-surface,
+  html .project-card.reservation .project-glass-surface { -webkit-backdrop-filter:none; backdrop-filter:none; background-color:#262626; box-shadow:none; }
+  html .project-card .card-meta { color:#fff; }
+  html .project-card .card-phase { border-color:#dedede; background:#333; color:#fff; }
+}
+@media (prefers-reduced-motion:reduce) {
+  html .project-card { transition:none; }
+}
+
+.brand-link { display:inline-flex; align-items:center; min-height:44px; color:#ededed; text-decoration:none; border-radius:6px; }
+.brand-link:hover { color:#fff; }
+.brand-link:focus-visible { outline:2px solid var(--focus); outline-offset:4px; }
+.brand-logo { display:block; width:112px; height:auto; }
+.workspace-help-tooltip { overflow:auto; }
+@media (max-width:700px) { .brand-logo { width:100px; } }
+
+.header-top { flex-wrap:wrap; }
+.brand-link { margin-right:auto; }
+.header-top .date-navigation { margin-left:auto; }
+.preview-note { margin:8px 0 0; font-size:10px; }
+@media (max-width:700px) {
+  .header-top { gap:10px 14px; padding:10px 0 12px; }
+  .header-top .date-navigation { order:3; width:100%; justify-content:flex-end; }
 }
 </style>
 </head>
 <body>
   <main class="app">
     <header class="app-header">
-      <div><p class="brand">PM STUDIO <span>／ PRODUCTION SCHEDULE</span></p><h1 id="schedule-title">專案排程</h1></div>
-      <button id="language-toggle" class="language-button" lang="en" aria-label="Switch to English">English</button>
-    </header>
-    <p id="preview-note" class="preview-note" hidden>示意預覽 · 所有資料皆為虛構</p>
-    <section class="schedule" aria-labelledby="schedule-title">
-      <div class="toolbar">
-        <div class="date-navigation">
+      <div class="header-top">
+        <a class="brand brand-link" href="https://hiiiodigital.com/" aria-label="HIIIO 官網"><svg class="brand-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5909 1134" fill="currentColor" aria-hidden="true" focusable="false"><path d="M2526.17,1129.17l-739.834,-0c-45.375,-0 -82.166,-36.792 -82.166,-82.167l-0,-964.833c-0,-45.375 36.791,-82.167 82.166,-82.167l739.834,-0c45.375,-0 82.166,36.792 82.166,82.167l0,964.833c0,45.375 -36.791,82.167 -82.166,82.167Z"/><path d="M3561.58,1129.17l-739.833,-0c-45.375,-0 -82.167,-36.792 -82.167,-82.167l0,-964.833c0,-45.375 36.792,-82.167 82.167,-82.167l739.833,-0c45.375,-0 82.167,36.792 82.167,82.167l-0,964.833c-0,45.375 -36.792,82.167 -82.167,82.167Z"/><path d="M4597,1129.17l-739.833,-0c-45.375,-0 -82.167,-36.792 -82.167,-82.167l-0,-964.833c-0,-45.375 36.792,-82.167 82.167,-82.167l739.833,-0c45.375,-0 82.167,36.792 82.167,82.167l-0,964.833c-0,45.375 -36.792,82.167 -82.167,82.167Z"/><circle cx="5345.83" cy="566.667" r="562.5"/><path d="M1480.33,0.917l-544,-0c-45.375,-0 -82.166,36.791 -82.166,82.166l-0,237.959c-0,40.25 -32.667,72.916 -72.917,72.916c-40.25,0 -72.917,-32.666 -72.917,-72.916l0,-237.959c0,-45.375 -36.791,-82.166 -82.166,-82.166l-544,-0c-45.375,-0 -82.167,36.791 -82.167,82.166l-0,964.834c-0,45.375 36.792,82.166 82.167,82.166l544,0c45.375,0 82.166,-36.791 82.166,-82.166l0,-237.959c0,-40.291 32.667,-72.916 72.917,-72.916c40.25,-0 72.917,32.625 72.917,72.916l-0,237.959c-0,45.375 36.791,82.166 82.166,82.166l544,0c45.375,0 82.167,-36.791 82.167,-82.166l-0,-964.792c-0,-45.417 -36.792,-82.208 -82.167,-82.208Z"/></svg></a>
+<nav class="date-navigation" aria-describedby="date-range">
           <button id="previous" class="arrow-button" aria-label="查看較早日期">←</button>
           <button id="today-button" class="today-button">今天</button>
           <button id="next" class="arrow-button" aria-label="查看較晚日期">→</button>
-        </div>
-        <strong id="date-range" class="date-range">—</strong>
-        <div class="legend"><span><i class="production-key"></i><span id="legend-production">製作</span></span><span><i class="correction-key"></i><span id="legend-correction">修正</span></span><span><i class="reservation-key"></i><span id="legend-reservation">時段預約</span></span><span><i class="follow-up-key"></i><span id="legend-follow-up">後續追蹤</span></span></div>
+        </nav>
+        <button id="language-toggle" class="language-button" lang="en" aria-label="Switch to English">English</button>
+      </div>
+      <h1 id="schedule-title" class="sr-only">專案排程</h1>
+    </header>
+    <section class="schedule" aria-labelledby="schedule-title">
+      <div class="toolbar">
+        <span id="date-range" class="sr-only" role="status" aria-live="polite" aria-atomic="true">—</span>
+
       </div>
       <div id="load-notice" class="load-notice" role="status"><span id="load-message">正在讀取排程</span><button id="retry" hidden>重試</button></div>
       <div id="timeline-grid" class="timeline-grid" hidden>
         <div id="workspace-labels" class="workspace-labels"></div>
         <div id="timeline-viewport" class="timeline-viewport" tabindex="0" aria-label="排程時間軸，可左右捲動"><div id="timeline-canvas" class="timeline-canvas"></div></div>
       </div>
-      <div class="timeline-footer"><span id="visible-count"></span><span id="sync-status" role="status"></span></div>
+      <div class="timeline-footer">
+        <span id="sync-status" class="sync-status" role="status"></span>
+        <div class="schedule-key">
+          <div class="legend"><span><i class="production-key"></i><span id="legend-production">製作</span></span><span><i class="correction-key"></i><span id="legend-correction">修正</span></span><span><i class="reservation-key"></i><span id="legend-reservation">時段預約</span></span><span><i class="follow-up-key"></i><span id="legend-follow-up">後續追蹤</span></span></div>
+          <span id="visible-count" class="visible-count"></span>
+        </div>
+      </div>
     </section>
     <section id="pending-section" class="pending-section" hidden aria-labelledby="pending-title">
       <div class="section-heading"><h2 id="pending-title">待排與待確認</h2><span id="pending-count" class="count-badge"></span></div>
       <div id="pending-projects" class="pending-projects"></div>
     </section>
     <footer id="page-footer" class="page-footer">空白時段不代表可預約，檔期須由團隊確認。</footer>
+    <p id="preview-note" class="preview-note" hidden>示意預覽 · 所有資料皆為虛構</p>
   </main>
   <script>
 // Generated from PM Studio sources. No project records are embedded.
 (async () => {
 const TIMELINE_DAYS = 210;
 const TIMELINE_AXIS_HEIGHT = 68;
-const TIMELINE_LANE_HEIGHT = 94;
+const TIMELINE_LANE_HEIGHT = 70;
 
 function timelineScale(viewportWidth) {
   const width = Math.max(1, Number(viewportWidth) || 1);
@@ -257,7 +575,7 @@ function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = 
         block.lane = lane + block.phaseLane;
         block.left = (Math.max(firstDay, block.first) - firstDay) * dayWidth + inset;
         block.width = (Math.min(lastDay, block.last) - Math.max(firstDay, block.first) + 1) * dayWidth - 2 * inset;
-        block.top = top + 12 + block.lane * TIMELINE_LANE_HEIGHT;
+        block.top = top + 11 + block.lane * TIMELINE_LANE_HEIGHT;
         blocks.push(block);
       }
       const followUp = group.followUp;
@@ -266,7 +584,7 @@ function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = 
         followUp.left = Math.max(0, (followUp.first - firstDay) * dayWidth - inset);
         const end = Math.min((today - firstDay + .5) * dayWidth, days * dayWidth);
         followUp.width = Math.max(0, end - followUp.left);
-        followUp.top = top + 51 + followUp.lane * TIMELINE_LANE_HEIGHT;
+        followUp.top = top + 35 + followUp.lane * TIMELINE_LANE_HEIGHT;
         followUp.endpointVisible = today >= firstDay && today <= lastDay;
         followUp.clippedStart = followUp.first < firstDay;
         followUps.push(followUp);
@@ -412,9 +730,547 @@ function scheduleReadTime(value) {
   return new Intl.DateTimeFormat(scheduleLanguage === 'en' ? 'en-GB' : 'zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date);
 }
 
+const WORKSPACE_COPY = Object.freeze({
+  'zh-Hant': {
+    A: ['角色模型', '3D 角色模型製作。'],
+    B: ['角色模型', '3D 角色模型製作。'],
+    C: ['角色・場景', '角色、場景及其他 3D 模型製作。'],
+    D: ['遊戲 CT 美術', '遊戲 CT 美術外包。'],
+  },
+  en: {
+    A: ['Character models', '3D character modeling.'],
+    B: ['Character models', '3D character modeling.'],
+    C: ['Characters & scenes', '3D character, scene and other modeling.'],
+    D: ['Game CT art', 'Outsourced game CT art.'],
+  },
+});
+
+/** One shared workspace help controller for either read-only schedule view. */
+function createWorkspaceHelp({ doc = document, view = doc.defaultView, getLanguage }) {
+  let sequence = 0;
+  let active = null;
+  let closeTimer = null;
+  const cancelClose = () => {
+    if (closeTimer !== null) view.clearTimeout(closeTimer);
+    closeTimer = null;
+  };
+  function close(record = active, dismiss = false) {
+    if (!record) return;
+    cancelClose();
+    record.tooltip.hidden = true;
+    record.pinned = false;
+    record.button.classList.remove('is-help-open');
+    record.button.removeAttribute('data-help-pinned');
+    if (dismiss) record.dismissed = true;
+    if (active === record) active = null;
+  }
+  function position() {
+    const record = active;
+    if (!record) return;
+    if (!record.button.isConnected) { close(record); return; }
+    const trigger = record.button.getBoundingClientRect();
+    const viewportWidth = doc.documentElement.clientWidth;
+    const viewportHeight = view.innerHeight;
+    if (trigger.bottom < 0 || trigger.top > viewportHeight || trigger.right < 0 || trigger.left > viewportWidth) {
+      close(record);
+      return;
+    }
+    const margin = 8;
+    const gap = 10;
+    record.tooltip.style.maxWidth = Math.max(0, viewportWidth - margin * 2) + 'px';
+    record.tooltip.style.maxHeight = Math.max(0, viewportHeight - margin * 2) + 'px';
+    const tip = record.tooltip.getBoundingClientRect();
+    const clamp = (value, maximum) => Math.max(margin, Math.min(value, Math.max(margin, maximum)));
+    let left, top;
+    if (trigger.right + gap + tip.width <= viewportWidth - margin) {
+      left = trigger.right + gap;
+      top = clamp(trigger.top, viewportHeight - tip.height - margin);
+    } else {
+      left = clamp(trigger.left, viewportWidth - tip.width - margin);
+      if (trigger.bottom + gap + tip.height <= viewportHeight - margin) top = trigger.bottom + gap;
+      else if (trigger.top - gap - tip.height >= margin) top = trigger.top - gap - tip.height;
+      else top = clamp(trigger.bottom + gap, viewportHeight - tip.height - margin);
+    }
+    record.tooltip.style.left = Math.round(left) + 'px';
+    record.tooltip.style.top = Math.round(top) + 'px';
+  }
+  function open(record) {
+    if (record.dismissed || !record.button.isConnected) return;
+    cancelClose();
+    if (active && active !== record) close();
+    active = record;
+    record.tooltip.hidden = false;
+    record.button.classList.add('is-help-open');
+    position();
+  }
+  function maybeClose(record) {
+    cancelClose();
+    if (record.pinned || record.focused || record.overTrigger || record.overTip) return;
+    closeTimer = view.setTimeout(() => {
+      closeTimer = null;
+      if (!record.pinned && !record.focused && !record.overTrigger && !record.overTip) close(record);
+    }, 110);
+  }
+  function node(tag, className, text) {
+    const element = doc.createElement(tag);
+    element.className = className;
+    if (text !== undefined) element.textContent = text;
+    return element;
+  }
+  function render(label, id) {
+    if (active && !active.button.isConnected) close();
+    const english = getLanguage() === 'en';
+    const copy = WORKSPACE_COPY[english ? 'en' : 'zh-Hant'][id];
+    if (!copy) return;
+    const button = node('button', 'workspace-trigger');
+    button.setAttribute('type', 'button');
+    button.setAttribute('data-workspace-id', id);
+    button.setAttribute('aria-label', english
+      ? 'Workspace ' + id + ' · ' + copy[0] + '. View project types'
+      : '工作區 ' + id + ' · ' + copy[0] + '，查看案件類型');
+    const hint = node('span', 'workspace-info', 'ⓘ');
+    hint.setAttribute('aria-hidden', 'true');
+    button.append(node('span', 'workspace-letter', id), node('span', 'workspace-description', copy[0]), hint);
+    const tooltip = node('div', 'workspace-help-tooltip');
+    tooltip.append(node('span', 'workspace-help-copy', copy[1]));
+    tooltip.setAttribute('id', 'workspace-help-' + (++sequence));
+    tooltip.setAttribute('role', 'tooltip');
+    tooltip.hidden = true;
+    button.setAttribute('aria-describedby', tooltip.id);
+    label.append(button, tooltip);
+    const record = { button, tooltip, pinned:false, focused:false, overTrigger:false, overTip:false, dismissed:false };
+    button.addEventListener('pointerenter', () => {
+      record.overTrigger = true;
+      if (!record.focused) record.dismissed = false;
+      open(record);
+    });
+    button.addEventListener('pointerleave', () => { record.overTrigger = false; maybeClose(record); });
+    tooltip.addEventListener('pointerenter', () => { record.overTip = true; cancelClose(); });
+    tooltip.addEventListener('pointerleave', () => { record.overTip = false; maybeClose(record); });
+    button.addEventListener('focus', () => { record.focused = true; record.dismissed = false; open(record); });
+    button.addEventListener('blur', () => { record.focused = false; record.pinned = false; record.dismissed = false; maybeClose(record); });
+    button.addEventListener('click', () => {
+      if (record.pinned) { close(record, true); return; }
+      record.dismissed = false;
+      record.pinned = true;
+      open(record);
+      button.setAttribute('data-help-pinned', 'true');
+    });
+  }
+  doc.addEventListener?.('pointerdown', event => {
+    if (active && (!active.button.isConnected || (!active.button.contains(event.target) && !active.tooltip.contains(event.target)))) close(active, true);
+  }, true);
+  doc.addEventListener?.('keydown', event => { if (event.key === 'Escape' && active) close(active, true); });
+  view?.addEventListener('resize', position, { passive:true });
+  doc.addEventListener?.('scroll', position, { capture:true, passive:true });
+  return { render, close:() => close() };
+}
+
+/**
+ * Neutral, edge-only background refraction for schedule surfaces.
+ * Independently written; optical reference: https://kube.io/blog/liquid-glass-css-svg/
+ * The displacement map is geometry, never visible color or a captured data payload.
+ *
+ * Apply --project-refraction only to backdrop-filter on an empty decorative
+ * surface. Do not apply filter to a card or its text. Example:
+ * .project-glass-surface { backdrop-filter: var(--project-refraction, none); }
+ *
+ * A valid CSS url() is not proof that an engine renders SVG backdrop filters.
+ * No UA detection or automatic claim of cross-browser optical support is made.
+ * data-refraction="off" on a surface or ancestor requests the CSS fallback.
+ */
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const PROPERTY = '--project-refraction';
+const STATE = 'data-refraction-state';
+const MAX_MAP_PIXELS = 262144;
+const MAX_MAP_SIDE = 4096;
+let installationNumber = 0;
+
+const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
+
+/** Pure geometry in CSS pixels; short strips reduce bezel and optical strength. */
+function neutralRefractionGeometry(width, height, { strength = 3, bezel = 6, radius = 12 } = {}) {
+  width = Math.max(0, finite(width, 0));
+  height = Math.max(0, finite(height, 0));
+  const halfShortSide = Math.min(width, height) / 2;
+  const effectiveBezel = clamp(finite(bezel, 6), 0, halfShortSide);
+  return {
+    width,
+    height,
+    radius: clamp(finite(radius, 12), 0, halfShortSide),
+    bezel: effectiveBezel,
+    strength: clamp(finite(strength, 3), 0, effectiveBezel * 0.5),
+  };
+}
+
+/**
+ * Pure signed-distance sampler. dx/dy are source-sampling offsets in CSS px.
+ * The rounded rectangle has a flat center and a fixed-width optical bezel.
+ * A smooth envelope avoids a discontinuity at the inside/outside of the bezel.
+ */
+function sampleNeutralRefraction(x, y, geometry) {
+  const { width, height, radius, bezel, strength } = geometry;
+  const px = x - width / 2;
+  const py = y - height / 2;
+  const qx = Math.abs(px) - (width / 2 - radius);
+  const qy = Math.abs(py) - (height / 2 - radius);
+  const ox = Math.max(qx, 0);
+  const oy = Math.max(qy, 0);
+  const outsideLength = Math.hypot(ox, oy);
+  const distance = outsideLength + Math.min(Math.max(qx, qy), 0) - radius;
+  const depth = -distance;
+  if (distance > 0 || bezel === 0 || strength === 0 || depth >= bezel) {
+    return { dx: 0, dy: 0, inside: distance <= 0, depth };
+  }
+  let nx = 0;
+  let ny = 0;
+  if (outsideLength > 0) {
+    nx = Math.sign(px) * ox / outsideLength;
+    ny = Math.sign(py) * oy / outsideLength;
+  } else if (qx > qy) {
+    nx = Math.sign(px);
+  } else {
+    ny = Math.sign(py);
+  }
+  const wave = Math.sin(Math.PI * clamp(depth / bezel, 0, 1));
+  const displacement = strength * wave * wave;
+  return { dx: -nx * displacement, dy: -ny * displacement, inside: true, depth };
+}
+
+/**
+ * Pure RGBA map generator, importable in Node for geometry checks.
+ * RG=128 is neutral; alpha is opaque. Blue is unused and remains 128.
+ * No DPI multiplication: sampling is bounded and geometry stays in CSS pixels.
+ */
+function createNeutralDisplacementPixels(width, height, options = {}) {
+  const geometry = neutralRefractionGeometry(width, height, options);
+  const mapWidth = Math.max(1, Math.ceil(geometry.width));
+  const mapHeight = Math.max(1, Math.ceil(geometry.height));
+  if (mapWidth > MAX_MAP_SIDE || mapHeight > MAX_MAP_SIDE || mapWidth * mapHeight > MAX_MAP_PIXELS) {
+    throw new RangeError('Refraction map exceeds the rendering pixel budget.');
+  }
+  const data = new Uint8ClampedArray(mapWidth * mapHeight * 4);
+  for (let row = 0; row < mapHeight; row += 1) {
+    const y = (row + 0.5) * geometry.height / mapHeight;
+    for (let column = 0; column < mapWidth; column += 1) {
+      const x = (column + 0.5) * geometry.width / mapWidth;
+      const { dx, dy } = sampleNeutralRefraction(x, y, geometry);
+      const index = (row * mapWidth + column) * 4;
+      data[index] = geometry.strength ? Math.round(128 + 127 * dx / geometry.strength) : 128;
+      data[index + 1] = geometry.strength ? Math.round(128 + 127 * dy / geometry.strength) : 128;
+      data[index + 2] = 128;
+      data[index + 3] = 255;
+    }
+  }
+  return { width: mapWidth, height: mapHeight, geometry, data };
+}
+
+function borderBox(element, computed) {
+  const number = property => finite(parseFloat(computed[property]), 0);
+  let width = number('width');
+  let height = number('height');
+  if (computed.boxSizing !== 'border-box') {
+    width += number('paddingLeft') + number('paddingRight') + number('borderLeftWidth') + number('borderRightWidth');
+    height += number('paddingTop') + number('paddingBottom') + number('borderTopWidth') + number('borderBottomWidth');
+  }
+  if (!width || !height) {
+    width = element.offsetWidth || 0;
+    height = element.offsetHeight || 0;
+  }
+  // Quarter-pixel sharing prevents inconsequential layout jitter rebuilding PNGs.
+  return { width: Math.round(width * 4) / 4, height: Math.round(height * 4) / 4 };
+}
+
+function computedRadius(computed, width, height, fallback) {
+  const parts = computed.borderTopLeftRadius.trim().split(/\s+/);
+  const resolve = (part, side) => part?.endsWith('%') ? finite(parseFloat(part), 0) * side / 100 : parseFloat(part);
+  const horizontal = resolve(parts[0], width);
+  const vertical = resolve(parts[1] || parts[0], height);
+  return Number.isFinite(horizontal) && Number.isFinite(vertical) ? Math.min(horizontal, vertical) : fallback;
+}
+
+/**
+ * Installs geometry maps; data-refraction-state="ready" means a map is attached,
+ * not that the browser has passed an optical rendering test. Other states are
+ * off, empty, budget or unavailable; each supplies an identity blur for fallback.
+ *
+ * Return value: refresh(), setEnabled(boolean), destroy(), and read-only stats.
+ * Attribute changes to class/data-refraction and layout resizes are observed.
+ * Call refresh() after CSS changes that alter only radius without a resize.
+ */
+function installNeutralRefraction({
+  root = document,
+  selector = '.project-card',
+  strength = 3,
+  bezel = 6,
+  radius = 12,
+  enabled = true,
+  maxFilters = 64,
+  maxElements = 512,
+  maxMapsPerFrame = 3,
+} = {}) {
+  const doc = root.nodeType === 9 ? root : root.ownerDocument;
+  const view = doc?.defaultView;
+  if (!doc || !view || !root.querySelectorAll) throw new TypeError('A document or element root is required.');
+  root.querySelectorAll(selector); // Validate the selector before mutating anything.
+  maxFilters = clamp(Math.floor(finite(maxFilters, 64)), 1, 128);
+  maxElements = clamp(Math.floor(finite(maxElements, 512)), 1, 2048);
+  maxMapsPerFrame = clamp(Math.floor(finite(maxMapsPerFrame, 3)), 1, 8);
+  const prefix = `neutral-refraction-${++installationNumber}`;
+  const cache = new Map();
+  const records = new Map();
+  const dirty = new Set();
+  let sequence = 0;
+  let frame = 0;
+  let scanNeeded = true;
+  let destroyed = false;
+  let modeEnabled = Boolean(enabled);
+  const requestFrame = view.requestAnimationFrame.bind(view);
+  const cancelFrame = view.cancelAnimationFrame.bind(view);
+  const syntaxAccepted = Boolean(view.CSS?.supports('backdrop-filter', 'url("#neutral-refraction-probe")') ||
+    view.CSS?.supports('-webkit-backdrop-filter', 'url("#neutral-refraction-probe")'));
+  const svg = doc.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('width', '0');
+  svg.setAttribute('height', '0');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  svg.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;pointer-events:none';
+  const defs = doc.createElementNS(SVG_NS, 'defs');
+  svg.append(defs);
+  const host = root.nodeType === 9 ? (doc.body || doc.documentElement) : root;
+  host.append(svg); // Keep SVG in the tree; display:none can disable filter references.
+
+  function schedule() {
+    if (!destroyed && !frame) frame = requestFrame(flush);
+  }
+
+  function release(record) {
+    if (!record.entry) return;
+    record.entry.references -= 1;
+    if (record.entry.references === 0) {
+      record.entry.filter.remove();
+      cache.delete(record.entry.key);
+    }
+    record.entry = null;
+  }
+
+  function writeState(element, state, value = 'blur(0px)') {
+    if (element.style.getPropertyValue(PROPERTY) !== value) element.style.setProperty(PROPERTY, value);
+    if (element.getAttribute(STATE) !== state) element.setAttribute(STATE, state);
+  }
+
+  function restore(element, record) {
+    release(record);
+    if (record.previousValue) element.style.setProperty(PROPERTY, record.previousValue, record.previousPriority);
+    else element.style.removeProperty(PROPERTY);
+    if (record.previousState === null) element.removeAttribute(STATE);
+    else element.setAttribute(STATE, record.previousState);
+  }
+
+  function buildEntry(key, geometry) {
+    const map = createNeutralDisplacementPixels(geometry.width, geometry.height, geometry);
+    const canvas = doc.createElement('canvas');
+    canvas.width = map.width;
+    canvas.height = map.height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas unavailable.');
+    const pixels = context.createImageData(map.width, map.height);
+    pixels.data.set(map.data);
+    context.putImageData(pixels, 0, 0);
+    const imageUrl = canvas.toDataURL('image/png');
+    canvas.width = canvas.height = 1;
+    const filter = doc.createElementNS(SVG_NS, 'filter');
+    const id = `${prefix}-${++sequence}`;
+    for (const [name, value] of Object.entries({ id, filterUnits: 'userSpaceOnUse', primitiveUnits: 'userSpaceOnUse',
+      x: 0, y: 0, width: geometry.width, height: geometry.height, 'color-interpolation-filters': 'sRGB' })) {
+      filter.setAttribute(name, String(value));
+    }
+    const image = doc.createElementNS(SVG_NS, 'feImage');
+    for (const [name, value] of Object.entries({ x: 0, y: 0, width: geometry.width, height: geometry.height,
+      href: imageUrl, preserveAspectRatio: 'none', result: 'raw-neutral-map' })) image.setAttribute(name, String(value));
+    // RG=128 encodes the exact midpoint. Correct 128/255 to 0.5 before sampling.
+    const correction = doc.createElementNS(SVG_NS, 'feComponentTransfer');
+    correction.setAttribute('in', 'raw-neutral-map');
+    correction.setAttribute('result', 'neutral-map');
+    for (const channel of ['R', 'G']) {
+      const transfer = doc.createElementNS(SVG_NS, `feFunc${channel}`);
+      transfer.setAttribute('type', 'linear');
+      transfer.setAttribute('slope', String(255 / 254));
+      transfer.setAttribute('intercept', String(-1 / 254));
+      correction.append(transfer);
+    }
+    const displacement = doc.createElementNS(SVG_NS, 'feDisplacementMap');
+    for (const [name, value] of Object.entries({ in: 'SourceGraphic', in2: 'neutral-map',
+      scale: geometry.strength * 2, xChannelSelector: 'R', yChannelSelector: 'G' })) {
+      displacement.setAttribute(name, String(value));
+    }
+    filter.append(image, correction, displacement);
+    defs.append(filter);
+    const entry = { key, id, filter, references: 0, pixels: map.width * map.height };
+    cache.set(key, entry);
+    return entry;
+  }
+
+  const resizeObserver = typeof view.ResizeObserver === 'function' ? new view.ResizeObserver(entries => {
+    for (const { target } of entries) if (records.has(target)) dirty.add(target);
+    schedule();
+  }) : null;
+
+  function scan() {
+    scanNeeded = false;
+    const selected = [];
+    if (root.nodeType === 1 && root.matches(selector)) selected.push(root);
+    for (const element of root.querySelectorAll(selector)) {
+      if (selected.length >= maxElements) break;
+      selected.push(element);
+    }
+    const live = new Set(selected);
+    for (const [element, record] of records) {
+      if (live.has(element)) continue;
+      resizeObserver?.unobserve(element);
+      dirty.delete(element);
+      restore(element, record);
+      records.delete(element);
+    }
+    for (const element of selected) {
+      if (!records.has(element)) {
+        records.set(element, { entry: null, previousValue: element.style.getPropertyValue(PROPERTY),
+          previousPriority: element.style.getPropertyPriority(PROPERTY), previousState: element.getAttribute(STATE) });
+        resizeObserver?.observe(element);
+      }
+      dirty.add(element);
+    }
+  }
+
+  function update(element, builds) {
+    const record = records.get(element);
+    if (!record) return true;
+    if (!modeEnabled || element.closest('[data-refraction="off"],[data-refraction="false"]')) {
+      release(record);
+      writeState(element, 'off');
+      return true;
+    }
+    if (!syntaxAccepted) {
+      release(record);
+      writeState(element, 'unavailable');
+      return true;
+    }
+    const computed = view.getComputedStyle(element);
+    const { width, height } = borderBox(element, computed);
+    const geometry = neutralRefractionGeometry(width, height, {
+      strength, bezel, radius: computedRadius(computed, width, height, radius),
+    });
+    const pixels = Math.ceil(width) * Math.ceil(height);
+    if (width < 1 || height < 1 || !element.getClientRects().length || geometry.strength === 0) {
+      release(record);
+      writeState(element, 'empty');
+      return true;
+    }
+    if (width > MAX_MAP_SIDE || height > MAX_MAP_SIDE || pixels > MAX_MAP_PIXELS) {
+      release(record);
+      writeState(element, 'budget');
+      return true;
+    }
+    const key = [width, height, geometry.radius, geometry.bezel, geometry.strength].join(':');
+    if (record.entry?.key === key) return true;
+    let entry = cache.get(key);
+    if (!entry && builds.count >= maxMapsPerFrame) return false;
+    release(record);
+    if (!entry && cache.size >= maxFilters) {
+      writeState(element, 'budget');
+      return true;
+    }
+    if (!entry) {
+      try { entry = buildEntry(key, geometry); builds.count += 1; }
+      catch { writeState(element, 'unavailable'); return true; }
+    }
+    entry.references += 1;
+    record.entry = entry;
+    writeState(element, 'ready', `url("#${entry.id}")`);
+    return true;
+  }
+
+  function flush() {
+    frame = 0;
+    if (destroyed) return;
+    if (scanNeeded) scan();
+    const builds = { count: 0 };
+    let count = 0;
+    for (const element of dirty) {
+      if (count >= 48 || !update(element, builds)) break;
+      dirty.delete(element);
+      count += 1;
+    }
+    if (dirty.size || scanNeeded) schedule();
+  }
+
+  function refresh() {
+    if (destroyed) return;
+    scanNeeded = true;
+    schedule();
+  }
+
+  const mutationObserver = typeof view.MutationObserver === 'function' ? new view.MutationObserver(changes => {
+    if (changes.some(change => change.target !== svg && !svg.contains(change.target))) refresh();
+  }) : null;
+  mutationObserver?.observe(root.nodeType === 9 ? doc.documentElement : root, {
+    subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'data-refraction'],
+  });
+  view.addEventListener('resize', refresh, { passive: true });
+  schedule();
+
+  return {
+    refresh,
+    setEnabled(value) { modeEnabled = Boolean(value); refresh(); },
+    get stats() {
+      return { elements: records.size, filters: cache.size,
+        pixels: [...cache.values()].reduce((sum, entry) => sum + entry.pixels, 0),
+        pending: dirty.size, enabled: modeEnabled, syntaxAccepted, destroyed };
+    },
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      cancelFrame(frame);
+      frame = 0;
+      mutationObserver?.disconnect();
+      resizeObserver?.disconnect();
+      view.removeEventListener('resize', refresh);
+      for (const [element, record] of records) restore(element, record);
+      records.clear();
+      dirty.clear();
+      cache.clear();
+      svg.remove();
+    },
+  };
+}
+
+/** The static material remains usable when browser rendering APIs are absent. */
+function startScheduleRefraction(doc = document) {
+  if (!doc.defaultView?.requestAnimationFrame || !doc.createElementNS) return null;
+  const view = doc.defaultView;
+  const mount = () => installNeutralRefraction({ root:doc, selector:'.project-glass-surface', strength:4, bezel:7, radius:12 });
+  let refraction = mount();
+  const hide = () => refraction.destroy();
+  const show = event => { if (event.persisted) refraction = mount(); };
+  view.addEventListener('pagehide', hide);
+  view.addEventListener('pageshow', show);
+  return {
+    get stats() { return refraction.stats; },
+    destroy() {
+      view.removeEventListener('pagehide', hide);
+      view.removeEventListener('pageshow', show);
+      refraction.destroy();
+    },
+  };
+}
+
 const scheduleElement = (id) => document.getElementById(id);
 const scheduleState = { payload: null, firstDay: null, today: null, loading: false, failed: false, layout: null, scale: null, viewPosition: null };
 const readSchedule = createGoogleBridge();
+const workspaceHelp = createWorkspaceHelp({ getLanguage:getScheduleLanguage });
+startScheduleRefraction();
 let scheduleDetailsDialog;
 function scheduleNode(tag, className, text) {
   const node = document.createElement(tag);
@@ -462,6 +1318,7 @@ function showScheduleDetails(block) {
 }
 function renderScheduleChrome() {
   document.documentElement.lang = getScheduleLanguage();
+  document.querySelector('.brand-link')?.setAttribute('aria-label', getScheduleLanguage() === 'en' ? 'HIIIO website' : 'HIIIO 官網');
   document.title = 'PM Studio｜' + scheduleText('title');
   for (const [id, key] of Object.entries({ 'schedule-title': 'title', 'today-button': 'today', 'legend-production': 'production', 'legend-correction': 'correction', 'legend-reservation': 'reservation', 'legend-follow-up': 'followUp', 'pending-title': 'pending', 'page-footer': 'footer', 'retry': 'retry', 'preview-note': 'preview' })) scheduleElement(id).textContent = scheduleText(key);
   scheduleElement('previous').setAttribute('aria-label', scheduleText('previous'));
@@ -498,12 +1355,18 @@ function renderSchedulePending() {
   target.replaceChildren();
   for (const { project, reasons } of projects) {
     const card = scheduleNode('article', 'pending-card');
+    const identity = scheduleNode('div', 'pending-identity');
     const title = scheduleNode('div', 'card-heading');
-    title.append(scheduleNode('span', 'card-id', project.id), scheduleNode('span', 'customer-code', projectIdentity(project)));
-    card.append(title, scheduleNode('p', 'pending-reason', reasons.map((reason) => scheduleText(reason)).join(' · ')));
-    card.append(scheduleNode('p', 'pending-dates', scheduleText(project.scheduleKind) + ' ' + rangeText(project.start, project.end)));
-    if (project.correctionStart || project.correctionEnd || reasons.includes('correction-dates')) card.append(scheduleNode('p', 'pending-dates', scheduleText('correction') + ' ' + rangeText(project.correctionStart, project.correctionEnd)));
-    const details = scheduleNode('button', 'pending-details', scheduleText('details'));
+    title.append(scheduleNode('span', 'card-id', project.id));
+    identity.append(title, scheduleNode('p', 'customer-code', projectIdentity(project)));
+    const schedule = scheduleNode('div', 'pending-schedule');
+    schedule.append(scheduleNode('p', 'pending-dates', scheduleText(project.scheduleKind) + ' ' + rangeText(project.start, project.end)));
+    if (project.correctionStart || project.correctionEnd || reasons.includes('correction-dates')) schedule.append(scheduleNode('p', 'pending-dates', scheduleText('correction') + ' ' + rangeText(project.correctionStart, project.correctionEnd)));
+    card.append(identity, scheduleNode('p', 'pending-reason', reasons.map((reason) => scheduleText(reason)).join(' · ')), schedule);
+    const details = scheduleNode('button', 'pending-details');
+    const arrow = scheduleNode('span', 'details-arrow', '↗');
+    arrow.setAttribute('aria-hidden', 'true');
+    details.append(scheduleNode('span', '', scheduleText('details')), arrow);
     details.setAttribute('type', 'button');
     details.setAttribute('aria-label', scheduleText('details') + ' · ' + project.id + ' · ' + projectIdentity(project));
     details.addEventListener('click', () => showScheduleDetails({ project, phase: 'pending' }));
@@ -539,6 +1402,7 @@ function renderScheduleTimeline(preserveScroll = false) {
   canvas.replaceChildren();
   canvas.style.width = layout.width + 'px'; canvas.style.height = layout.height + 'px';
   const labels = scheduleElement('workspace-labels');
+  workspaceHelp.close();
   labels.replaceChildren(scheduleNode('div', 'label-axis', scheduleText('workspace')));
   let monthStart = firstDay;
   for (let index = 0; index < TIMELINE_DAYS; index++) {
@@ -564,14 +1428,15 @@ function renderScheduleTimeline(preserveScroll = false) {
   }
   for (const row of layout.rows) {
     const label = scheduleNode('div', 'workspace-label'); label.style.height = row.height + 'px';
-    label.append(scheduleNode('span', 'workspace-letter', row.workspace.id), scheduleNode('span', 'workspace-description', workspaceText(row.workspace.id))); labels.append(label);
+    workspaceHelp.render(label, row.workspace.id); labels.append(label);
     const rule = scheduleNode('div', 'row-rule'); rule.style.top = row.top + row.height + 'px'; canvas.append(rule);
     if (!row.blocks.length && !row.followUps.length) { const empty = scheduleNode('span', 'empty-row', scheduleText('noWork')); empty.style.top = row.top + 43 + 'px'; canvas.append(empty); }
     for (const block of row.blocks) {
       const project = block.project;
-      const card = scheduleNode('button', 'project-card ' + block.phase + (block.startPrecision === 'month' ? ' month-start' : '') + (block.endPrecision === 'month' ? ' month-end' : ''));
+      const card = scheduleNode('button', 'project-card ' + block.phase + (block.width < 190 ? ' is-compact' : '') + (block.width < 80 ? ' is-narrow' : '') + (block.startPrecision === 'month' ? ' month-start' : '') + (block.endPrecision === 'month' ? ' month-end' : ''));
       card.setAttribute('type', 'button');
       card.setAttribute('data-project-id', project.id);
+      card.setAttribute('data-material', 'neutral-glass');
       card.setAttribute('data-phase', block.phase);
       card.setAttribute('data-start-precision', block.startPrecision);
       card.setAttribute('data-end-precision', block.endPrecision);
@@ -579,11 +1444,14 @@ function renderScheduleTimeline(preserveScroll = false) {
       card.setAttribute('tabindex', '0');
       const identity = project.id + ' · ' + projectIdentity(project);
       const details = identity + ' · ' + scheduleText(block.phase) + ' · ' + rangeText(block.start, block.end) + ' · ' + scheduleText('workspace') + ' ' + project.workspaceIds.join(' + ');
-      card.setAttribute('aria-label', details); card.setAttribute('title', details);
-      const heading = scheduleNode('div', 'card-heading'); heading.append(scheduleNode('span', 'card-id', project.id), scheduleNode('span', 'customer-code', projectIdentity(project)));
+      card.setAttribute('aria-label', details);
+      const heading = scheduleNode('div', 'card-heading'); heading.append(scheduleNode('span', 'card-id', project.id));
+      heading.append(scheduleNode('span', 'card-phase', scheduleText(block.phase)));
       const content = scheduleNode('span', 'card-content');
-      content.append(heading, scheduleNode('span', 'card-dates', rangeText(block.start, block.end)), scheduleNode('span', 'card-meta', scheduleText(block.phase) + ' · ' + project.workspaceIds.join(' + ') + ' · ' + String(project.workspaceUnits[row.workspace.id])));
-      card.append(content);
+      content.append(heading, scheduleNode('span', 'card-meta', projectIdentity(project)));
+      const glassSurface = scheduleNode('span', 'project-glass-surface');
+      glassSurface.setAttribute('aria-hidden', 'true');
+      card.append(glassSurface, content);
       card.addEventListener('click', () => showScheduleDetails(block));
       canvas.append(card);
     }
@@ -600,7 +1468,7 @@ function renderScheduleTimeline(preserveScroll = false) {
         endpoint.setAttribute('data-project-id', project.id);
         endpoint.setAttribute('data-phase', 'followUp');
         const details = project.id + ' · ' + projectIdentity(project) + ' · ' + project.followUp.map((status) => scheduleText(status)).join(' · ');
-        endpoint.setAttribute('aria-label', details); endpoint.setAttribute('title', details);
+        endpoint.setAttribute('aria-label', details);
         endpoint.style.left = followUp.left + followUp.width - 22 + 'px'; endpoint.style.top = followUp.top - 22 + 'px';
         endpoint.append(scheduleNode('span', 'follow-up-label', project.id));
         endpoint.addEventListener('click', () => showScheduleDetails(followUp));

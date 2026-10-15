@@ -233,7 +233,7 @@ test('public details show the five authorized text fields and client type withou
   value.projects = [project];
   const page = await mount(html, value, { width: 212 });
   const card = page.get('timeline-canvas').querySelector('.project-card');
-  assert.match(card.textContent, /C-901客戶 TEST-01 · VTuber個人/);
+  assert.match(card.textContent, /C-901製作客戶 TEST-01 · VTuber個人/);
   assert.doesNotMatch(card.textContent, /Fictional project|Fictional client/);
   await card.click();
   const dialog = page.get('project-details');

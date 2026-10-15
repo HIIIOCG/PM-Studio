@@ -1,6 +1,6 @@
 export const TIMELINE_DAYS = 210;
 export const TIMELINE_AXIS_HEIGHT = 68;
-export const TIMELINE_LANE_HEIGHT = 94;
+export const TIMELINE_LANE_HEIGHT = 70;
 
 export function timelineScale(viewportWidth) {
   const width = Math.max(1, Number(viewportWidth) || 1);
@@ -96,7 +96,7 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
         block.lane = lane + block.phaseLane;
         block.left = (Math.max(firstDay, block.first) - firstDay) * dayWidth + inset;
         block.width = (Math.min(lastDay, block.last) - Math.max(firstDay, block.first) + 1) * dayWidth - 2 * inset;
-        block.top = top + 12 + block.lane * TIMELINE_LANE_HEIGHT;
+        block.top = top + 11 + block.lane * TIMELINE_LANE_HEIGHT;
         blocks.push(block);
       }
       const followUp = group.followUp;
@@ -105,7 +105,7 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
         followUp.left = Math.max(0, (followUp.first - firstDay) * dayWidth - inset);
         const end = Math.min((today - firstDay + .5) * dayWidth, days * dayWidth);
         followUp.width = Math.max(0, end - followUp.left);
-        followUp.top = top + 51 + followUp.lane * TIMELINE_LANE_HEIGHT;
+        followUp.top = top + 35 + followUp.lane * TIMELINE_LANE_HEIGHT;
         followUp.endpointVisible = today >= firstDay && today <= lastDay;
         followUp.clippedStart = followUp.first < firstDay;
         followUps.push(followUp);

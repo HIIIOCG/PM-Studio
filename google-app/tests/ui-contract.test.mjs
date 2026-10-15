@@ -127,6 +127,47 @@ test('historic follow-up survives offscreen work without stretching bars, reserv
   assert.equal(workView.blocks[0].width, 31 * 10 - 2.4);
   assert.equal(workView.blocks[1].left + workView.blocks[1].width, workView.followUps[0].left);
 });
+test('compact lane geometry contains real bars and touch endpoints, including offscreen historic work', async () => {
+  const css = await readFile(new URL('../../web/dist/styles.css', import.meta.url), 'utf8');
+  const cardHeight = Number(/\.project-card \{[^}]*\bheight:\s*(\d+)px/.exec(css)?.[1]);
+  const endpointRule = /\.follow-up-endpoint \{([^}]+)\}/.exec(css)?.[1] || '';
+  const endpointWidth = Number(/\bwidth:\s*(\d+)px/.exec(endpointRule)?.[1]);
+  const endpointHeight = Number(/\bheight:\s*(\d+)px/.exec(endpointRule)?.[1]);
+  assert.equal(cardHeight, 48);
+  assert.equal(endpointWidth, 44);
+  assert.equal(endpointHeight, 44);
+  const source = payload(), today = timelineDay('2026-12-23'), first = today - 4;
+  const base = { ...source.projects[0], workspaceIds: ['A'], workspaceUnits: { A: 1 }, pendingReasons: [] };
+  const historical = { ...base, id: 'C-997', start: '2026-08-01', end: '2026-08-31', correctionStart: '', correctionEnd: '', followUp: ['payment'] };
+  const revised = { ...base, id: 'C-998', start: '2026-12-01', end: '2026-12-20', correctionStart: '2026-12-15', correctionEnd: '2026-12-22', followUp: ['customer-confirmation'] };
+  const current = { ...base, id: 'C-999', start: '2026-12-18', end: '2026-12-24', correctionStart: '', correctionEnd: '', followUp: [] };
+  for (const viewportWidth of [212, 900]) {
+    const row = buildTimelineLayout([historical, revised, current], source.workspaces, first, { ...timelineScale(viewportWidth), today }).rows[0];
+    const historicFollowUp = row.followUps.find((item) => item.project.id === historical.id);
+    assert.ok(historicFollowUp.clippedStart && historicFollowUp.endpointVisible);
+    assert.ok(!row.blocks.some((item) => item.project.id === historical.id));
+    const laneCenters = new Map();
+    for (const block of row.blocks) {
+      assert.ok(block.top >= row.top && block.top + cardHeight <= row.top + row.height);
+      laneCenters.set(block.lane, block.top + cardHeight / 2);
+    }
+    for (const followUp of row.followUps) {
+      assert.equal(followUp.top, row.top + 35 + followUp.lane * 70);
+      assert.ok(followUp.top - endpointHeight / 2 >= row.top);
+      assert.ok(followUp.top + endpointHeight / 2 <= row.top + row.height);
+      const anchor = row.blocks.find((block) => block.project.id === followUp.project.id && block.phase === followUp.anchor.phase);
+      if (anchor) assert.equal(followUp.top, anchor.top + cardHeight / 2);
+      laneCenters.set(followUp.lane, followUp.top);
+    }
+    const centers = [...laneCenters.entries()].sort((a, b) => a[0] - b[0]);
+    assert.equal(centers.length, 4);
+    for (let index = 1; index < centers.length; index++) {
+      assert.equal(centers[index][1] - centers[index - 1][1], 70);
+      assert.ok(centers[index - 1][1] + cardHeight / 2 < centers[index][1] - cardHeight / 2);
+    }
+  }
+});
+
 test('Taipei date crosses midnight independently of UTC and follow-up starts only after work ends', () => {
   assert.equal(taipeiToday(new Date('2026-12-21T15:59:59Z')), '2026-12-21');
   assert.equal(taipeiToday(new Date('2026-12-21T16:00:00Z')), '2026-12-22');
