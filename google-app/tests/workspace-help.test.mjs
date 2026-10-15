@@ -4,94 +4,90 @@ import { createWorkspaceHelp } from '../../web/dist/workspace-help.mjs';
 import { neutralRefractionGeometry, sampleNeutralRefraction, createNeutralDisplacementPixels } from '../../web/dist/neutral-refraction.mjs';
 
 function helpPage() {
-  const timers = new Map();
-  const eventTarget = () => ({
-    listeners:new Map(),
-    addEventListener(name, callback) { const handlers = this.listeners.get(name) || []; handlers.push(callback); this.listeners.set(name, handlers); },
-    fire(name, values = {}) { for (const callback of this.listeners.get(name) || []) callback(values); },
-  });
   function node(tag) {
-    const attributes = new Map(), classes = new Set();
-    return {
-      ...eventTarget(), tagName:tag, children:[], style:{}, hidden:false, isConnected:true, textContent:'',
-      classList:{ add:value => classes.add(value), remove:value => classes.delete(value), contains:value => classes.has(value) },
+    const attributes = new Map();
+    const element = {
+      tagName:tag, children:[], open:false, _text:'', listeners:new Map(),
       append(...children) { this.children.push(...children); },
+      replaceChildren(...children) { this._text = ''; this.children = children; },
       setAttribute(name, value) { attributes.set(name,String(value)); },
       getAttribute(name) { return attributes.get(name) ?? null; },
-      removeAttribute(name) { attributes.delete(name); },
-      get id() { return attributes.get('id'); },
-      contains(target) { return target === this || this.children.some(child => child.contains(target)); },
-      getBoundingClientRect() {
-        if (tag === 'button') return { left:8, right:80, top:620, bottom:698, width:72, height:78 };
-        const width = Math.min(280, Number.parseFloat(this.style.maxWidth) || 280);
-        const height = Math.min(60, Number.parseFloat(this.style.maxHeight) || 60);
-        return { left:0, top:0, right:width, bottom:height, width, height };
-      },
+      addEventListener(name, callback) { const handlers = this.listeners.get(name) || []; handlers.push(callback); this.listeners.set(name, handlers); },
+      fire(name, values = {}) { for (const callback of this.listeners.get(name) || []) callback(values); },
+      showModal() { this.open = true; },
+      close() { this.open = false; },
     };
+    Object.defineProperty(element,'textContent',{ get() { return this._text + this.children.map(child => child.textContent).join(''); }, set(value) { this._text = String(value); this.children = []; } });
+    Object.defineProperty(element,'innerHTML',{ set() { throw new Error('Workspace information must render as plain text.'); } });
+    return element;
   }
-  const view = { ...eventTarget(), innerHeight:700,
-    setTimeout(callback) { const id = timers.size + 1; timers.set(id,callback); return id; },
-    clearTimeout(id) { timers.delete(id); },
-  };
-  const doc = { ...eventTarget(), documentElement:{ clientWidth:320 }, defaultView:view, createElement:node };
+  const main = node('main');
+  const doc = { createElement:node, querySelector:selector => selector === 'main' ? main : null };
   let language = 'zh-Hant';
   const help = createWorkspaceHelp({ doc, getLanguage:() => language });
   function render(id) {
     const label = node('div');
     help.render(label,id);
-    return { label, button:label.children[0], tooltip:label.children[1] };
+    return { label, button:label.children[0] };
   }
-  return { doc, view, render, language:value => { language = value; }, flushTimers() { const callbacks = [...timers.values()]; timers.clear(); callbacks.forEach(callback => callback()); } };
+  return { main, render, help, get dialog() { return main.children[0]; }, language:value => { language = value; } };
 }
 
-test('workspace help gives one concise customer-facing sentence in either language', () => {
+test('workspace dialogs show the authorized manager, project types and capacity as plain text in either language', () => {
   const page = helpPage();
-  const chinese = ['3D 角色模型製作。','3D 角色模型製作。','角色、場景及其他 3D 模型製作。','遊戲外包'];
+  const chinese = [
+    ['COOKRICE','3D人物角色模型','2組+'],
+    ['COOKRICE','3D人物角色模型','2組+'],
+    ['COOKRICE','角色、場景及其他 3D 模型','依案件安排'],
+    ['COCO','遊戲 CT 美術外包','依案件安排'],
+  ];
   for (const [index,id] of ['A','B','C','D'].entries()) {
-    const { button, tooltip } = page.render(id);
-    assert.equal(tooltip.children.length,1);
-    assert.equal(tooltip.children[0].textContent,chinese[index]);
-    assert.equal(button.getAttribute('aria-describedby'),tooltip.id);
-    assert.match(button.getAttribute('aria-label'),/查看案件類型/);
-    assert.equal(button.children.at(-1).textContent,'ⓘ');
+    const { button } = page.render(id);
+    assert.equal(button.tagName,'button');
+    assert.equal(button.getAttribute('type'),'button');
+    assert.equal(button.getAttribute('aria-haspopup'),'dialog');
+    assert.equal(button.getAttribute('aria-controls'),'workspace-details');
+    button.fire('click');
+    const dialog = page.dialog;
+    assert.equal(dialog.getAttribute('aria-labelledby'),'workspace-details-title');
+    assert.equal(dialog.children[1].textContent,'團隊工作區 '+id);
+    const fields = dialog.children[2].children;
+    assert.deepEqual(fields.filter(field => field.tagName === 'dt').map(field => field.textContent),['工作區管理人','負責項目','可承接數量']);
+    assert.deepEqual(fields.filter(field => field.tagName === 'dd').map(field => field.textContent),chinese[index]);
+    dialog.children[0].fire('click');
   }
+  assert.equal(page.main.children.length,1,'all workspace buttons reuse the same modal');
   page.language('en');
-  const english = ['3D character modeling.','3D character modeling.','3D character, scene and other modeling.','Game outsourcing'];
-  for (const [index,id] of ['A','B','C','D'].entries()) assert.equal(page.render(id).tooltip.children[0].textContent,english[index]);
+  const { button } = page.render('A');
+  button.fire('click');
+  assert.equal(page.dialog.children[1].textContent,'Team workspace A');
+  assert.deepEqual(page.dialog.children[2].children.map(field => field.textContent),['Workspace manager','COOKRICE','Project types','3D character models','Capacity','2+ groups']);
+  assert.equal(page.dialog.children[0].getAttribute('aria-label'),'Close workspace information');
 });
 
-test('help remains available to hover and keyboard users, pins on click, closes on Escape or outside click, and stays within the viewport', () => {
+test('workspace information opens only on button activation and closes with the close button or native Escape cancellation', () => {
   const page = helpPage();
-  const { button, tooltip } = page.render('C');
+  const { label, button } = page.render('C');
   button.fire('pointerenter');
-  assert.equal(tooltip.hidden,false);
-  assert.ok(Number.parseFloat(tooltip.style.left) >= 8);
-  assert.ok(Number.parseFloat(tooltip.style.left) + tooltip.getBoundingClientRect().width <= page.doc.documentElement.clientWidth - 8);
-  assert.ok(Number.parseFloat(tooltip.style.top) + tooltip.getBoundingClientRect().height <= page.view.innerHeight - 8);
-  button.fire('pointerleave');
-  tooltip.fire('pointerenter');
-  page.flushTimers();
-  assert.equal(tooltip.hidden,false,'the tooltip remains readable when the pointer moves onto it');
-  tooltip.fire('pointerleave');
-  page.flushTimers();
-  assert.equal(tooltip.hidden,true);
   button.fire('focus');
-  assert.equal(tooltip.hidden,false);
-  page.doc.fire('keydown',{ key:'Escape' });
-  assert.equal(tooltip.hidden,true);
-  button.fire('pointerenter');
-  assert.equal(tooltip.hidden,true,'Escape dismisses help while keyboard focus remains');
-  button.fire('blur');
+  assert.equal(page.dialog,undefined);
+  assert.equal(label.children.length,1,'there is no adjacent tooltip');
+  assert.equal(button.getAttribute('aria-describedby'),null);
+  assert.equal(button.getAttribute('title'),null);
   button.fire('click');
-  button.fire('pointerleave');
-  page.flushTimers();
-  assert.equal(tooltip.hidden,false);
-  assert.equal(button.getAttribute('data-help-pinned'),'true');
-  page.doc.fire('pointerdown',{ target:tooltip.children[0] });
-  assert.equal(tooltip.hidden,false);
-  page.doc.fire('pointerdown',{ target:page.doc.createElement('div') });
-  assert.equal(tooltip.hidden,true);
-  assert.equal(button.getAttribute('data-help-pinned'),null);
+  assert.equal(page.dialog.open,true);
+  page.dialog.children[0].fire('click');
+  assert.equal(page.dialog.open,false);
+  button.fire('click');
+  let cancelled = false;
+  page.dialog.fire('cancel',{ preventDefault() { cancelled = true; } });
+  assert.equal(cancelled,true);
+  assert.equal(page.dialog.open,false);
+  button.fire('click');
+  page.render('D');
+  assert.equal(page.dialog.open,true,'timeline label redraws do not dismiss the modal');
+  page.help.close();
+  assert.equal(page.dialog.open,false);
 });
 
 test('refraction bends only the bounded edge region and leaves the center optically neutral', () => {

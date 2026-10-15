@@ -145,7 +145,6 @@ function renderScheduleTimeline(preserveScroll = false) {
   canvas.replaceChildren();
   canvas.style.width = layout.width + 'px'; canvas.style.height = layout.height + 'px';
   const labels = scheduleElement('workspace-labels');
-  workspaceHelp.close();
   labels.replaceChildren(scheduleNode('div', 'label-axis', scheduleText('workspace')));
   let monthStart = firstDay;
   for (let index = 0; index < TIMELINE_DAYS; index++) {

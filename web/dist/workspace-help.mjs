@@ -1,135 +1,71 @@
-const WORKSPACE_COPY = Object.freeze({
-  'zh-Hant': {
-    A: ['角色模型', '3D 角色模型製作。'],
-    B: ['角色模型', '3D 角色模型製作。'],
-    C: ['角色・場景', '角色、場景及其他 3D 模型製作。'],
-    D: ['遊戲外包', '遊戲外包'],
-  },
-  en: {
-    A: ['Character models', '3D character modeling.'],
-    B: ['Character models', '3D character modeling.'],
-    C: ['Characters & scenes', '3D character, scene and other modeling.'],
-    D: ['Game outsourcing', 'Game outsourcing'],
-  },
+const WORKSPACE_INFO = Object.freeze({
+  A: { manager:'COOKRICE', category:['角色模型', 'Character models'], items:['3D人物角色模型', '3D character models'], capacity:['2組+', '2+ groups'] },
+  B: { manager:'COOKRICE', category:['角色模型', 'Character models'], items:['3D人物角色模型', '3D character models'], capacity:['2組+', '2+ groups'] },
+  C: { manager:'COOKRICE', category:['角色・場景', 'Characters & scenes'], items:['角色、場景及其他 3D 模型', 'Characters, scenes and other 3D models'], capacity:['依案件安排', 'As arranged per project'] },
+  D: { manager:'COCO', category:['遊戲外包', 'Game outsourcing'], items:['遊戲 CT 美術外包', 'Outsourced game CT art'], capacity:['依案件安排', 'As arranged per project'] },
+});
+const WORKSPACE_DIALOG_TEXT = Object.freeze({
+  title:['團隊工作區 ', 'Team workspace '],
+  manager:['工作區管理人', 'Workspace manager'],
+  items:['負責項目', 'Project types'],
+  capacity:['可承接數量', 'Capacity'],
+  open:['查看工作區資訊', 'View workspace information'],
+  close:['關閉工作區資訊', 'Close workspace information'],
 });
 
-/** One shared workspace help controller for either read-only schedule view. */
-export function createWorkspaceHelp({ doc = document, view = doc.defaultView, getLanguage }) {
-  let sequence = 0;
-  let active = null;
-  let closeTimer = null;
-  const cancelClose = () => {
-    if (closeTimer !== null) view.clearTimeout(closeTimer);
-    closeTimer = null;
-  };
-  function close(record = active, dismiss = false) {
-    if (!record) return;
-    cancelClose();
-    record.tooltip.hidden = true;
-    record.pinned = false;
-    record.button.classList.remove('is-help-open');
-    record.button.removeAttribute('data-help-pinned');
-    if (dismiss) record.dismissed = true;
-    if (active === record) active = null;
-  }
-  function position() {
-    const record = active;
-    if (!record) return;
-    if (!record.button.isConnected) { close(record); return; }
-    const trigger = record.button.getBoundingClientRect();
-    const viewportWidth = doc.documentElement.clientWidth;
-    const viewportHeight = view.innerHeight;
-    if (trigger.bottom < 0 || trigger.top > viewportHeight || trigger.right < 0 || trigger.left > viewportWidth) {
-      close(record);
-      return;
-    }
-    const margin = 8;
-    const gap = 10;
-    record.tooltip.style.maxWidth = Math.max(0, viewportWidth - margin * 2) + 'px';
-    record.tooltip.style.maxHeight = Math.max(0, viewportHeight - margin * 2) + 'px';
-    const tip = record.tooltip.getBoundingClientRect();
-    const clamp = (value, maximum) => Math.max(margin, Math.min(value, Math.max(margin, maximum)));
-    let left, top;
-    if (trigger.right + gap + tip.width <= viewportWidth - margin) {
-      left = trigger.right + gap;
-      top = clamp(trigger.top, viewportHeight - tip.height - margin);
-    } else {
-      left = clamp(trigger.left, viewportWidth - tip.width - margin);
-      if (trigger.bottom + gap + tip.height <= viewportHeight - margin) top = trigger.bottom + gap;
-      else if (trigger.top - gap - tip.height >= margin) top = trigger.top - gap - tip.height;
-      else top = clamp(trigger.bottom + gap, viewportHeight - tip.height - margin);
-    }
-    record.tooltip.style.left = Math.round(left) + 'px';
-    record.tooltip.style.top = Math.round(top) + 'px';
-  }
-  function open(record) {
-    if (record.dismissed || !record.button.isConnected) return;
-    cancelClose();
-    if (active && active !== record) close();
-    active = record;
-    record.tooltip.hidden = false;
-    record.button.classList.add('is-help-open');
-    position();
-  }
-  function maybeClose(record) {
-    cancelClose();
-    if (record.pinned || record.focused || record.overTrigger || record.overTip) return;
-    closeTimer = view.setTimeout(() => {
-      closeTimer = null;
-      if (!record.pinned && !record.focused && !record.overTrigger && !record.overTip) close(record);
-    }, 110);
-  }
+/** Shared click-activated workspace information for both schedule views. */
+export function createWorkspaceHelp({ doc = document, getLanguage }) {
+  let dialog;
+  const languageIndex = () => getLanguage() === 'en' ? 1 : 0;
   function node(tag, className, text) {
     const element = doc.createElement(tag);
-    element.className = className;
+    if (className) element.className = className;
     if (text !== undefined) element.textContent = text;
     return element;
   }
+  function close() {
+    if (dialog?.open) dialog.close();
+  }
+  function show(id) {
+    const workspace = WORKSPACE_INFO[id];
+    if (!workspace) return;
+    if (!dialog) {
+      dialog = node('dialog', 'project-details workspace-details');
+      dialog.setAttribute('id', 'workspace-details');
+      dialog.setAttribute('aria-labelledby', 'workspace-details-title');
+      doc.querySelector('main').append(dialog);
+      dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
+    }
+    const language = languageIndex();
+    const title = node('h2', '', WORKSPACE_DIALOG_TEXT.title[language] + id);
+    title.setAttribute('id', 'workspace-details-title');
+    const dismiss = node('button', 'details-close', '×');
+    dismiss.setAttribute('type', 'button');
+    dismiss.setAttribute('aria-label', WORKSPACE_DIALOG_TEXT.close[language]);
+    dismiss.addEventListener('click', close);
+    const fields = node('dl', 'workspace-fields');
+    for (const key of ['manager', 'items', 'capacity']) {
+      const value = key === 'manager' ? workspace.manager : workspace[key][language];
+      fields.append(node('dt', '', WORKSPACE_DIALOG_TEXT[key][language]), node('dd', '', value));
+    }
+    dialog.replaceChildren(dismiss, title, fields);
+    if (!dialog.open) dialog.showModal();
+  }
   function render(label, id) {
-    if (active && !active.button.isConnected) close();
-    const english = getLanguage() === 'en';
-    const copy = WORKSPACE_COPY[english ? 'en' : 'zh-Hant'][id];
-    if (!copy) return;
+    const workspace = WORKSPACE_INFO[id];
+    if (!workspace) return;
+    const language = languageIndex();
     const button = node('button', 'workspace-trigger');
     button.setAttribute('type', 'button');
     button.setAttribute('data-workspace-id', id);
-    button.setAttribute('aria-label', english
-      ? 'Workspace ' + id + ' · ' + copy[0] + '. View project types'
-      : '工作區 ' + id + ' · ' + copy[0] + '，查看案件類型');
+    button.setAttribute('aria-haspopup', 'dialog');
+    button.setAttribute('aria-controls', 'workspace-details');
+    button.setAttribute('aria-label', WORKSPACE_DIALOG_TEXT.open[language] + ' · ' + id + ' · ' + workspace.category[language]);
     const hint = node('span', 'workspace-info', 'ⓘ');
     hint.setAttribute('aria-hidden', 'true');
-    button.append(node('span', 'workspace-letter', id), node('span', 'workspace-description', copy[0]), hint);
-    const tooltip = node('div', 'workspace-help-tooltip');
-    tooltip.append(node('span', 'workspace-help-copy', copy[1]));
-    tooltip.setAttribute('id', 'workspace-help-' + (++sequence));
-    tooltip.setAttribute('role', 'tooltip');
-    tooltip.hidden = true;
-    button.setAttribute('aria-describedby', tooltip.id);
-    label.append(button, tooltip);
-    const record = { button, tooltip, pinned:false, focused:false, overTrigger:false, overTip:false, dismissed:false };
-    button.addEventListener('pointerenter', () => {
-      record.overTrigger = true;
-      if (!record.focused) record.dismissed = false;
-      open(record);
-    });
-    button.addEventListener('pointerleave', () => { record.overTrigger = false; maybeClose(record); });
-    tooltip.addEventListener('pointerenter', () => { record.overTip = true; cancelClose(); });
-    tooltip.addEventListener('pointerleave', () => { record.overTip = false; maybeClose(record); });
-    button.addEventListener('focus', () => { record.focused = true; record.dismissed = false; open(record); });
-    button.addEventListener('blur', () => { record.focused = false; record.pinned = false; record.dismissed = false; maybeClose(record); });
-    button.addEventListener('click', () => {
-      if (record.pinned) { close(record, true); return; }
-      record.dismissed = false;
-      record.pinned = true;
-      open(record);
-      button.setAttribute('data-help-pinned', 'true');
-    });
+    button.append(node('span', 'workspace-letter', id), node('span', 'workspace-description', workspace.category[language]), hint);
+    button.addEventListener('click', () => show(id));
+    label.append(button);
   }
-  doc.addEventListener?.('pointerdown', event => {
-    if (active && (!active.button.isConnected || (!active.button.contains(event.target) && !active.tooltip.contains(event.target)))) close(active, true);
-  }, true);
-  doc.addEventListener?.('keydown', event => { if (event.key === 'Escape' && active) close(active, true); });
-  view?.addEventListener('resize', position, { passive:true });
-  doc.addEventListener?.('scroll', position, { capture:true, passive:true });
-  return { render, close:() => close() };
+  return { render, close };
 }
