@@ -15,7 +15,7 @@ async function fixture(t) {
 function browserDocument(html) {
   const elements = new Map();
   function element(tag = 'div') {
-    const node = { tagName: tag.toUpperCase(), children: [], parentNode: null, style: {}, dataset: {}, attributes: {}, listeners: new Map(),
+    const node = { tagName: tag.toUpperCase(), children: [], parentNode: null, style: { setProperty(name, value) { this[name] = String(value); } }, dataset: {}, attributes: {}, listeners: new Map(),
       hidden: false, disabled: false, open: false, value: '', scrollLeft: 0, clientWidth: 900, _text: '',
       append(...children) { for (const child of children) { child.parentNode = this; this.children.push(child); } },
       replaceChildren(...children) { this._text = ''; this.children = []; this.append(...children); },
@@ -350,4 +350,83 @@ test('malformed records fail closed while a valid empty schedule remains explici
   assert.match(emptyPage.get('load-message').textContent,/No projects/);
   assert.equal(emptyPage.get('retry').hidden,true);
   assert.equal(emptyPage.get('pending-section').hidden,true);
+});
+
+function installStackFocusTracking(page) {
+  const addFocus = (node) => {
+    node.focus = () => { page.document.activeElement = node; };
+    return node;
+  };
+  const createElement = page.document.createElement;
+  page.document.createElement = (...args) => addFocus(createElement(...args));
+  page.document.querySelectorAll('button').forEach(addFocus);
+}
+
+test('D stack expansion preserves language, scroll, resize and navigation state without storing it or folding other workspaces', async(t) => {
+  const value = sample();
+  const base = { ...value.projects[0], start: '2026-12-20', end: '2026-12-30', correctionStart: '', correctionEnd: '', pendingReasons: [], followUp: [] };
+  const samePeriod = (id, workspace) => ({ ...base, id, workspaceIds: [workspace], workspaceUnits: { [workspace]: 1 } });
+  const otherIds = ['C-971', 'C-972', 'C-973', 'C-974', 'BG-971', 'BG-972'];
+  value.projects = [
+    samePeriod('O-971', 'D'), samePeriod('O-972', 'D'),
+    { ...samePeriod('O-973', 'D'), start: '2027-01-12', end: '2027-01-16' },
+    ...otherIds.map((id, index) => samePeriod(id, ['A', 'B', 'C'][Math.floor(index / 2)])),
+    { ...value.projects.find((project) => project.id === 'C-904') },
+  ];
+  const original = JSON.stringify(value), html = await fixture(t);
+  const page = await mount(html, value);
+  installStackFocusTracking(page);
+  const canvas = page.get('timeline-canvas');
+  const toggles = () => canvas.querySelectorAll('.project-stack-toggle');
+  const normalCards = () => canvas.querySelectorAll('.project-card').filter((card) => !card.classList.contains('project-stack-toggle'));
+  assert.equal(toggles().length, 1);
+  let toggle = toggles()[0];
+  const stackKey = toggle.getAttribute('data-stack-key');
+  assert.ok(stackKey);
+  assert.equal(toggle.tagName, 'BUTTON');
+  assert.equal(toggle.getAttribute('type'), 'button');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+  assert.match(toggle.getAttribute('aria-label'), /^展開 2 個專案(?: ·|$)/);
+  assert.equal(page.get('pending-count').textContent, '1');
+  for (const id of otherIds) assert.ok(normalCards().some((card) => card.getAttribute('data-project-id') === id), id);
+  assert.equal(normalCards().filter((card) => ['O-971', 'O-972'].includes(card.getAttribute('data-project-id'))).length, 0);
+  const visibleCount = page.get('visible-count').textContent;
+  toggle.focus();
+  await toggle.click();
+  assert.equal(page.document.getElementById('project-details')?.open ?? false, false, 'the first activation only unfolds the stack');
+  assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
+  assert.equal(toggles()[0].getAttribute('aria-label'), '收合 2 個專案');
+  assert.equal(normalCards().filter((card) => ['O-971', 'O-972'].includes(card.getAttribute('data-project-id'))).length, 2);
+  assert.equal(page.get('visible-count').textContent, visibleCount);
+  const viewport = page.get('timeline-viewport');
+  viewport.scrollLeft = 24;
+  viewport.listeners.get('scroll')();
+  const leftDate = page.get('date-range').textContent.split(' — ')[0];
+  await page.click('language-toggle');
+  assert.equal(viewport.scrollLeft, 24);
+  assert.equal(toggles()[0].getAttribute('aria-label'), 'Collapse 2 projects');
+  assert.equal(toggles()[0].getAttribute('data-stack-key'), stackKey);
+  assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
+  page.resize(212);
+  assert.equal(page.get('date-range').textContent.split(' — ')[0], leftDate);
+  assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
+  await page.click('next');
+  await page.click('previous');
+  assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
+  assert.equal(toggles()[0].getAttribute('data-stack-key'), stackKey);
+  const pendingCount = page.get('pending-count').textContent;
+  await toggles()[0].click();
+  toggle = toggles()[0];
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+  assert.match(toggle.getAttribute('aria-label'), /^Expand 2 projects(?: ·|$)/);
+  assert.equal(page.document.activeElement, toggle, 'collapsing restores focus to the replacement stack button');
+  assert.equal(page.document.getElementById('project-details')?.open ?? false, false);
+  assert.equal(page.get('pending-count').textContent, pendingCount);
+  for (const id of otherIds) assert.ok(normalCards().some((card) => card.getAttribute('data-project-id') === id), id);
+  assert.deepEqual([...page.preferences.keys()], ['pm-studio-language']);
+  assert.equal(JSON.stringify(value), original);
+  assert.equal(page.calls.length, 1);
+  await toggle.click();
+  const reopened = await mount(html, value, { preferences: page.preferences });
+  assert.equal(reopened.get('timeline-canvas').querySelector('.project-stack-toggle').getAttribute('aria-expanded'), 'false', 'a fresh page starts collapsed');
 });

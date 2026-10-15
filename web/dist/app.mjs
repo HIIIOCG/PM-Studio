@@ -65,7 +65,7 @@ export function projectPendingReasons(project) {
   if (!project.customerCode) reasons.add('customer-code');
   return [...reasons];
 }
-export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = TIMELINE_DAYS, today = null }) {
+export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = TIMELINE_DAYS, today = null, expandedStacks = new Set() }) {
   if (!Number.isFinite(dayWidth) || dayWidth <= 0) throw new Error('Invalid timeline scale.');
   let top = TIMELINE_AXIS_HEIGHT;
   const lastDay = firstDay + days - 1;
@@ -85,34 +85,101 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
       return { project, phases, followUp, laneCount: phaseLaneEnds.length, first: Math.min(...items.map((item) => item.first)), last: Math.max(...items.map((item) => item.last)) };
     }).filter((group) => [...group.phases, ...(group.followUp ? [group.followUp] : [])].some((item) => item.last >= firstDay && item.first <= lastDay))
       .sort((a, b) => a.first - b.first || a.last - b.last || a.project.id.localeCompare(b.project.id));
-    const blocks = [], followUps = [];
+    const blocks = [], followUps = [], stacks = [];
+    // Only identical complete phase footprints share a visual stack. Tracking
+    // intervals and screen clipping never establish membership or change its key.
+    const footprintGroups = new Map();
+    if (workspace.id === 'D') for (const group of groups) {
+      if (!group.phases.some((phase) => phase.last >= firstDay && phase.first <= lastDay)) continue;
+      const footprint = JSON.stringify([
+        group.phases.map(({ phase, start, end, startPrecision, endPrecision }) => [phase, start, end, startPrecision, endPrecision]),
+        group.project.correctionStart || '', group.project.correctionEnd || '',
+      ]);
+      if (!footprintGroups.has(footprint)) footprintGroups.set(footprint, []);
+      footprintGroups.get(footprint).push(group);
+    }
+    const stackByProject = new Map();
+    for (const [footprint, members] of footprintGroups) {
+      if (new Set(members.map((member) => member.project.id)).size < 2) continue;
+      members.sort((a, b) => a.project.id.localeCompare(b.project.id));
+      const ids = members.map((member) => member.project.id);
+      const key = 'D:' + JSON.stringify([ids, footprint]);
+      const stack = { key, expanded: expandedStacks.has(key), count: ids.length, projects: members.map((member) => member.project), blocks: [], representatives: [], representative: null, controlsId: 'd-stack-' + ids.join('-') };
+      for (const member of members) stackByProject.set(member.project.id, { stack, members });
+    }
+    const emittedStacks = new Set();
+    const units = groups.flatMap((group) => {
+      const entry = stackByProject.get(group.project.id);
+      if (!entry) return [{ members: [group], first: group.first, last: group.last, laneCount: group.laneCount, offsets: [0], stack: null }];
+      const { stack, members } = entry;
+      if (emittedStacks.has(stack.key)) return [];
+      emittedStacks.add(stack.key);
+      // Expanded stacks reserve a full lane for the collapse control. Collapsed
+      // stacks still reserve distinct anchors for every individual tracking line.
+      let laneCount = stack.expanded ? 1 : members[0].laneCount;
+      const offsets = members.map((member, index) => {
+        if (!stack.expanded && (index === 0 || !member.followUp)) return 0;
+        const offset = laneCount;
+        laneCount += member.laneCount;
+        return offset;
+      });
+      return [{ members, first: Math.min(...members.map((member) => member.first)), last: Math.max(...members.map((member) => member.last)), laneCount, offsets, stack }];
+    });
     const laneEnds = [];
-    for (const group of groups) {
+    for (const unit of units) {
       // Keep a project's phases and tracking line together, with room for its endpoint.
       let lane = 0;
-      while (Array.from({ length: group.laneCount }, (_, offset) => laneEnds[lane + offset]).some((end) => end !== undefined && end >= group.first)) lane++;
-      for (let offset = 0; offset < group.laneCount; offset++) laneEnds[lane + offset] = group.last + (group.followUp ? 110 / dayWidth : 0);
-      for (const block of group.phases.filter((phase) => phase.last >= firstDay && phase.first <= lastDay)) {
-        block.lane = lane + block.phaseLane;
-        block.left = (Math.max(firstDay, block.first) - firstDay) * dayWidth + inset;
-        block.width = (Math.min(lastDay, block.last) - Math.max(firstDay, block.first) + 1) * dayWidth - 2 * inset;
-        block.top = top + 11 + block.lane * TIMELINE_LANE_HEIGHT;
-        blocks.push(block);
+      while (Array.from({ length: unit.laneCount }, (_, offset) => laneEnds[lane + offset]).some((end) => end !== undefined && end >= unit.first)) lane++;
+      let reservedEnd = unit.last + (unit.members.some((member) => member.followUp) ? 110 / dayWidth : 0);
+      if (unit.stack?.expanded) {
+        // A one-day bar can be narrower than its 44px collapse control. Reserve
+        // the visible control track too, without enlarging any real work phase.
+        for (const phase of unit.members[0].phases.filter((item) => item.last >= firstDay && item.first <= lastDay)) {
+          const visibleFirst = Math.max(firstDay, phase.first);
+          const width = (Math.min(lastDay, phase.last) - visibleFirst + 1) * dayWidth - 2 * inset;
+          reservedEnd = Math.max(reservedEnd, visibleFirst + Math.max(44, width) / dayWidth);
+        }
       }
-      const followUp = group.followUp;
-      if (followUp && followUp.last >= firstDay && followUp.first <= lastDay) {
-        followUp.lane = lane + group.phases.find((phase) => phase.phase === followUp.anchor.phase).phaseLane;
-        followUp.left = Math.max(0, (followUp.first - firstDay) * dayWidth - inset);
-        const end = Math.min((today - firstDay + .5) * dayWidth, days * dayWidth);
-        followUp.width = Math.max(0, end - followUp.left);
-        followUp.top = top + 35 + followUp.lane * TIMELINE_LANE_HEIGHT;
-        followUp.endpointVisible = today >= firstDay && today <= lastDay;
-        followUp.clippedStart = followUp.first < firstDay;
-        followUps.push(followUp);
+      for (let offset = 0; offset < unit.laneCount; offset++) laneEnds[lane + offset] = reservedEnd;
+      for (const [memberIndex, group] of unit.members.entries()) {
+        const memberLane = lane + unit.offsets[memberIndex];
+        for (const block of group.phases.filter((phase) => phase.last >= firstDay && phase.first <= lastDay)) {
+          block.lane = memberLane + block.phaseLane;
+          block.left = (Math.max(firstDay, block.first) - firstDay) * dayWidth + inset;
+          block.width = (Math.min(lastDay, block.last) - Math.max(firstDay, block.first) + 1) * dayWidth - 2 * inset;
+          block.top = top + 11 + block.lane * TIMELINE_LANE_HEIGHT;
+          if (unit.stack) {
+            block.stackKey = unit.stack.key;
+            block.stackHidden = !unit.stack.expanded && memberIndex !== 0;
+            unit.stack.blocks.push(block);
+            if (memberIndex === 0) unit.stack.representatives.push(block);
+          }
+          blocks.push(block);
+        }
+        const followUp = group.followUp;
+        if (followUp && followUp.last >= firstDay && followUp.first <= lastDay) {
+          followUp.lane = memberLane + group.phases.find((phase) => phase.phase === followUp.anchor.phase).phaseLane;
+          followUp.left = Math.max(0, (followUp.first - firstDay) * dayWidth - inset);
+          const end = Math.min((today - firstDay + .5) * dayWidth, days * dayWidth);
+          followUp.width = Math.max(0, end - followUp.left);
+          followUp.top = top + 35 + followUp.lane * TIMELINE_LANE_HEIGHT;
+          followUp.endpointVisible = today >= firstDay && today <= lastDay;
+          followUp.clippedStart = followUp.first < firstDay;
+          followUps.push(followUp);
+        }
+      }
+      if (unit.stack) {
+        const stack = unit.stack;
+        stack.representative = stack.representatives[0];
+        stack.left = stack.representative.left;
+        stack.width = stack.representative.width;
+        stack.top = stack.expanded ? top + 11 + lane * TIMELINE_LANE_HEIGHT : stack.representative.top;
+        stacks.push(stack);
       }
     }
     const height = Math.max(1, laneEnds.length) * TIMELINE_LANE_HEIGHT + 18;
     const row = { workspace, top, height, blocks, followUps };
+    if (workspace.id === 'D') row.stacks = stacks;
     top += height;
     return row;
   });

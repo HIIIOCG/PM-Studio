@@ -30,7 +30,7 @@ function browserDocument(html) {
     return node.tagName.toLowerCase() === selector.toLowerCase();
   }
   function element(tag = 'div') {
-    const node = { tagName: tag.toUpperCase(), children: [], style: {}, attributes: {}, listeners: new Map(), hidden: false, disabled: false, open: false, scrollLeft: 0, _text: '',
+    const node = { tagName: tag.toUpperCase(), children: [], style: { setProperty(name, value) { this[name] = String(value); } }, attributes: {}, listeners: new Map(), hidden: false, disabled: false, open: false, scrollLeft: 0, _text: '',
       append(...children) { this.children.push(...children); }, replaceChildren(...children) { this._text = ''; this.children = children; },
       setAttribute(name, value) { this.attributes[name] = String(value); if (name === 'id') { this.id = String(value); elements.set(this.id, this); } if (name === 'class') this.className = String(value); },
       getAttribute(name) { return this.attributes[name] ?? null; }, addEventListener(name, callback) { this.listeners.set(name, callback); }, async click() { return await this.listeners.get('click')?.({ target: this }); },
@@ -318,5 +318,74 @@ test('both Pages variants fail generically, reject the other field contract, and
     const serviceError = await mount(html, { error: 'PRIVATE_SERVICE_ERROR' }, { http: true });
     assert.equal(serviceError.get('timeline-grid').hidden, true);
     assert.doesNotMatch(serviceError.document.querySelector('main').textContent, /PRIVATE_SERVICE_ERROR/);
+  }
+});
+
+test('both Pages views unfold D stacks before opening individual authorized details and keep single D cases directly actionable', async () => {
+  for (const teamspace of [false, true]) {
+    const source = teamspace ? sample() : createPreviewPayload(new Date('2026-12-21T04:00:00Z'));
+    const base = { ...source.projects[0], start: '2026-12-20', end: '2026-12-30', correctionStart: '', correctionEnd: '', workspaceIds: ['D'], workspaceUnits: { D: 1 }, pendingReasons: [], followUp: [] };
+    source.projects = [
+      { ...base, id: 'O-981', ...(teamspace ? { name: '虛構堆疊專案甲', customer: '虛構同一客戶' } : {}), deliveryGoal: '中性第一項交付目標' },
+      { ...base, id: 'O-982', ...(teamspace ? { name: '虛構堆疊專案乙', customer: '虛構同一客戶' } : {}), deliveryGoal: '中性第二項交付目標' },
+      { ...base, id: 'O-983', ...(teamspace ? { name: '虛構單獨專案' } : {}), start: '2027-01-12', end: '2027-01-16', deliveryGoal: '中性單獨交付目標' },
+    ];
+    const original = JSON.stringify(source);
+    const url = teamspace ? DIRECT_TEAMSPACE_URL : DIRECT_PUBLIC_URL;
+    const html = await (teamspace ? renderTeamspaceEntry(url) : renderPublicEntry(url));
+    const page = await mount(html, source, { http: true, width: 212 });
+    const addFocus = (node) => { node.focus = () => { page.document.activeElement = node; }; return node; };
+    const createElement = page.document.createElement;
+    page.document.createElement = (...args) => addFocus(createElement(...args));
+    page.document.querySelectorAll('button').forEach(addFocus);
+    const canvas = page.get('timeline-canvas');
+    let dialog;
+    const toggles = () => canvas.querySelectorAll('.project-stack-toggle');
+    const cards = () => canvas.querySelectorAll('.project-card').filter((card) => !card.classList.contains('project-stack-toggle'));
+    assert.equal(toggles().length, 1);
+    assert.equal(toggles()[0].getAttribute('aria-expanded'), 'false');
+    assert.match(toggles()[0].getAttribute('aria-label'), /^展開 2 個專案(?: ·|$)/);
+    assert.deepEqual(cards().map((card) => card.getAttribute('data-project-id')), ['O-983']);
+    if (!teamspace) assert.doesNotMatch(canvas.textContent, /虛構堆疊專案|虛構同一客戶/);
+    await toggles()[0].click();
+    assert.equal(page.document.getElementById('project-details')?.open ?? false, false);
+    assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
+    for (const project of source.projects.slice(0, 2)) {
+      const card = cards().find((item) => item.getAttribute('data-project-id') === project.id);
+      assert.ok(card, project.id);
+      if (teamspace) assert.ok(card.textContent.includes(project.name));
+      await card.click();
+      dialog = page.get('project-details');
+      assert.equal(dialog.open, true);
+      assert.ok(dialog.textContent.includes(project.deliveryGoal));
+      assert.ok(page.get('project-details-title').textContent.includes(teamspace ? project.name : project.id));
+      assert.equal(dialog.querySelectorAll('.project-fields')[0].querySelectorAll('dt').length, teamspace ? 9 : 6);
+      for (const field of teamspace ? INTERNAL_PROJECT_FIELDS : ['owner', 'status', 'deliveryGoal', 'notes', 'deliverySteps']) assert.ok(dialog.textContent.includes(project[field]), field);
+      assert.equal(dialog.querySelectorAll('img').length, 0);
+      assert.equal(dialog.querySelectorAll('script').length, 0);
+      await page.click('close-project-details');
+      assert.equal(dialog.open, false);
+    }
+    await page.click('language-toggle');
+    assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
+    assert.equal(toggles()[0].getAttribute('aria-label'), 'Collapse 2 projects');
+    page.resize(900);
+    assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
+    await toggles()[0].click();
+    assert.equal(toggles()[0].getAttribute('aria-expanded'), 'false');
+    assert.match(toggles()[0].getAttribute('aria-label'), /^Expand 2 projects(?: ·|$)/);
+    assert.equal(page.document.activeElement, toggles()[0]);
+    assert.equal(dialog.open, false);
+    const single = cards().find((item) => item.getAttribute('data-project-id') === 'O-983');
+    assert.ok(single);
+    await single.click();
+    assert.equal(dialog.open, true, 'an unstacked D project opens details on its first activation');
+    assert.ok(dialog.textContent.includes('中性單獨交付目標'));
+    assert.equal(page.calls.length, 1);
+    assertAnonymousRequest(page.calls[0], url);
+    assert.deepEqual([...page.preferences.keys()], ['pm-studio-language']);
+    assert.equal(JSON.stringify(source), original);
+    const reopened = await mount(html, source, { http: true });
+    assert.equal(reopened.get('timeline-canvas').querySelector('.project-stack-toggle').getAttribute('aria-expanded'), 'false');
   }
 });

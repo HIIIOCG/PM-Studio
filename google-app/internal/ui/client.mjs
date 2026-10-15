@@ -8,7 +8,7 @@ function internalText(key) { return INTERNAL_TEXT[key]?.[getScheduleLanguage() =
 function projectName(project) { return project.name || scheduleText('unnamed'); }
 function fullProjectIdentity(project) { return project.id + ' · ' + projectName(project) + ' · ' + projectIdentity(project); }
 const scheduleElement = (id) => document.getElementById(id);
-const scheduleState = { payload: null, firstDay: null, today: null, loading: false, failed: false, layout: null, scale: null, viewPosition: null };
+const scheduleState = { payload: null, firstDay: null, today: null, loading: false, failed: false, layout: null, scale: null, viewPosition: null, expandedStacks: new Set() };
 const readSchedule = createGoogleBridge();
 const workspaceHelp = createWorkspaceHelp({ getLanguage:getScheduleLanguage });
 startScheduleRefraction();
@@ -117,6 +117,14 @@ function renderSchedulePending() {
     target.append(card);
   }
 }
+function toggleScheduleStack(stack, phase) {
+  if (stack.expanded) scheduleState.expandedStacks.delete(stack.key);
+  else scheduleState.expandedStacks.add(stack.key);
+  renderScheduleTimeline(true);
+  const toggle = [...scheduleElement('timeline-canvas').querySelectorAll('.project-stack-toggle')]
+    .find((node) => node.getAttribute('data-stack-key') === stack.key && node.getAttribute('data-stack-phase') === phase);
+  toggle?.focus({ preventScroll: true });
+}
 function renderScheduleTimeline(preserveScroll = false) {
   const viewport = scheduleElement('timeline-viewport');
   const previousScale = scheduleState.scale;
@@ -137,7 +145,7 @@ function renderScheduleTimeline(preserveScroll = false) {
   }
   const { payload, firstDay } = scheduleState;
   const today = timelineDay(scheduleState.today);
-  const layout = buildTimelineLayout(payload.projects, payload.workspaces, firstDay, { ...scale, today });
+  const layout = buildTimelineLayout(payload.projects, payload.workspaces, firstDay, { ...scale, today, expandedStacks: scheduleState.expandedStacks });
   const dayWidth = scale.dayWidth;
   scheduleState.scale = scale;
   scheduleState.layout = layout;
@@ -173,7 +181,35 @@ function renderScheduleTimeline(preserveScroll = false) {
     workspaceHelp.render(label, row.workspace.id); labels.append(label);
     const rule = scheduleNode('div', 'row-rule'); rule.style.top = row.top + row.height + 'px'; canvas.append(rule);
     if (!row.blocks.length && !row.followUps.length) { const empty = scheduleNode('span', 'empty-row', scheduleText('noWork')); empty.style.top = row.top + 43 + 'px'; canvas.append(empty); }
+    const stacks = new Map((row.stacks || []).map((stack) => [stack.key, stack]));
+    const stackMembers = new Map();
+    for (const stack of stacks.values()) {
+      const members = scheduleNode('div', 'stack-members');
+      members.setAttribute('id', stack.controlsId);
+      members.setAttribute('role', 'group');
+      members.setAttribute('aria-label', scheduleText('stackCount', { count: stack.count }));
+      canvas.append(members); stackMembers.set(stack.key, members);
+      if (!stack.expanded) continue;
+      for (const anchor of stack.representatives) {
+        const width = Math.max(44, anchor.width);
+        const track = scheduleNode('div', 'stack-collapse-track');
+        track.style.left = anchor.left + 'px'; track.style.top = stack.top + anchor.phaseLane * 34 + 'px'; track.style.width = width + 'px';
+        const collapse = scheduleNode('button', 'project-stack-toggle stack-collapse', width < 120 ? '⌃' : scheduleText('collapseStack', { count: stack.count }) + ' ⌃');
+        collapse.setAttribute('type', 'button');
+        collapse.setAttribute('data-stack-key', stack.key);
+        collapse.setAttribute('data-stack-phase', anchor.phase);
+        collapse.setAttribute('aria-expanded', 'true');
+        collapse.setAttribute('aria-label', scheduleText('collapseStack', { count: stack.count }));
+        collapse.setAttribute('aria-controls', stack.controlsId);
+        collapse.style.width = Math.min(240, width) + 'px';
+        collapse.addEventListener('click', () => toggleScheduleStack(stack, anchor.phase));
+        track.append(collapse); canvas.append(track);
+      }
+    }
     for (const block of row.blocks) {
+      if (block.stackHidden) continue;
+      const stack = stacks.get(block.stackKey);
+      const collapsed = stack && !stack.expanded;
       const project = block.project;
       const card = scheduleNode('button', 'project-card is-teamspace ' + block.phase + (block.width < 190 ? ' is-compact' : '') + (block.width < 80 ? ' is-narrow' : '') + (block.startPrecision === 'month' ? ' month-start' : '') + (block.endPrecision === 'month' ? ' month-end' : ''));
       card.setAttribute('type', 'button');
@@ -187,16 +223,29 @@ function renderScheduleTimeline(preserveScroll = false) {
       const identity = fullProjectIdentity(project);
       const details = identity + ' · ' + scheduleText(block.phase) + ' · ' + rangeText(block.start, block.end) + ' · ' + scheduleText('workspace') + ' ' + project.workspaceIds.join(' + ');
       card.setAttribute('aria-label', details);
+      if (collapsed) {
+        card.className += ' project-stack-toggle stack-top';
+        card.setAttribute('data-stack-key', stack.key);
+        card.setAttribute('data-stack-phase', block.phase);
+        card.setAttribute('aria-expanded', 'false');
+        card.setAttribute('aria-controls', stack.controlsId);
+        card.setAttribute('aria-label', scheduleText('expandStack', { count: stack.count }) + ' · ' + details);
+        for (let layer = Math.min(3, stack.count - 1); layer > 0; layer--) {
+          const ghost = scheduleNode('span', 'stack-layer');
+          ghost.setAttribute('aria-hidden', 'true'); ghost.style.setProperty('--stack-layer', String(layer));
+          card.append(ghost);
+        }
+      }
       const heading = scheduleNode('div', 'card-heading'); heading.append(scheduleNode('span', 'card-id', project.id));
       heading.append(scheduleNode('span', 'card-phase', scheduleText(block.phase)));
       heading.append(scheduleNode('span', 'project-name', projectName(project)));
       const content = scheduleNode('span', 'card-content');
-      content.append(heading, scheduleNode('span', 'card-meta', projectIdentity(project)));
+      content.append(heading, scheduleNode('span', 'card-meta', collapsed ? scheduleText('expandStack', { count: stack.count }) + ' ⌄' : projectIdentity(project)));
       const glassSurface = scheduleNode('span', 'project-glass-surface');
       glassSurface.setAttribute('aria-hidden', 'true');
       card.append(glassSurface, content);
-      card.addEventListener('click', () => showScheduleDetails(block));
-      canvas.append(card);
+      card.addEventListener('click', () => collapsed ? toggleScheduleStack(stack, block.phase) : showScheduleDetails(block));
+      (stackMembers.get(block.stackKey) || canvas).append(card);
     }
     for (const followUp of row.followUps) {
       const project = followUp.project;
