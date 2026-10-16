@@ -169,7 +169,7 @@ test('expanded adjacent one-day stacks reserve their actual minimum control widt
   for (const viewportWidth of [212, 900]) {
     const scale = timelineScale(viewportWidth);
     const collapsed = dRow(projects, scale);
-    assert.equal(new Set(collapsed.blocks.map((block) => block.lane)).size, 1, 'non-overlapping collapsed work reuses the original lane');
+    assert.equal(collapsed.stacks[2].representative.lane, collapsed.stacks[0].representative.lane, 'later work reuses the lane after the back cards end');
     for (const expandedKeys of [[collapsed.stacks[0].key], collapsed.stacks.map((stack) => stack.key)]) {
       const row = dRow(projects, { ...scale, expandedStacks: new Set(expandedKeys) });
       assert.deepEqual(row.blocks.map(phaseGeometry), collapsed.blocks.map(phaseGeometry));
@@ -197,4 +197,62 @@ test('a correction-only visible stack reserves its short header at the clipped v
   const next = row.blocks.find((block) => block.project.id === 'O-103');
   assert.ok(next.left < stack.left + 44);
   assert.ok(next.top >= stack.top + 32);
+});
+
+test('every collapsed case has one visible card layer and large diagonal stacks remain inside the row', () => {
+  for (const count of [2, 4, 5, 8, 19]) {
+    const projects = Array.from({ length: count }, (_, index) => project('O-' + (101 + index)));
+    const row = dRow(projects);
+    const stack = row.stacks[0];
+    assert.equal(stack.count, count);
+    assert.equal(stack.layerOffsetPx, 6);
+    assert.equal(stack.decorationOffsetPx, (count - 1) * 6);
+    assert.equal(stack.blocks.length, count);
+    assert.ok(stack.representative.top + 48 + stack.decorationOffsetPx <= row.top + row.height);
+    const expanded = dRow(projects, { expandedStacks: new Set([stack.key]) });
+    assert.deepEqual(expanded.blocks.map(phaseGeometry), row.blocks.map(phaseGeometry));
+  }
+});
+
+test('large collapsed back cards cannot cover an adjacent short case at either display scale', () => {
+  const projects = Array.from({ length: 8 }, (_, index) => project('O-' + (101 + index), { start: '2026-10-01', end: '2026-10-01' }));
+  projects.push(project('O-109', { start: '2026-10-02', end: '2026-10-02' }));
+  for (const viewportWidth of [212, 900]) {
+    const scale = timelineScale(viewportWidth);
+    const row = dRow(projects, scale);
+    const stack = row.stacks[0], representative = stack.representative;
+    const next = row.blocks.find((block) => block.project.id === 'O-109');
+    assert.ok(next.left < representative.left + representative.width + stack.decorationOffsetPx);
+    assert.ok(next.top >= representative.top + 48 + stack.decorationOffsetPx + 4);
+    assert.ok(row.blocks.every((block) => block.width === scale.dayWidth - 2 * Math.min(2, scale.dayWidth * .12)));
+    const expanded = dRow(projects, { ...scale, expandedStacks: new Set([stack.key]) });
+    assert.deepEqual(expanded.blocks.map(phaseGeometry), row.blocks.map(phaseGeometry));
+  }
+});
+
+test('diagonal decoration separates adjacent production and correction phases while tracking stays per case', () => {
+  const projects = Array.from({ length: 8 }, (_, index) => project('O-' + (101 + index), {
+    start: '2026-10-01', end: '2026-10-01', correctionStart: '2026-10-02', correctionEnd: '2026-10-02',
+    followUp: index === 0 || index === 3 ? ['payment'] : [],
+  }));
+  const row = dRow(projects);
+  const stack = row.stacks[0];
+  const [production, correction] = stack.representatives;
+  assert.equal(production.phase, 'production');
+  assert.equal(correction.phase, 'correction');
+  assert.ok(correction.left < production.left + production.width + stack.decorationOffsetPx);
+  assert.ok(correction.top >= production.top + 48 + stack.decorationOffsetPx + 4);
+  assert.equal(row.followUps.length, 2);
+  assert.equal(new Set(row.followUps.map((item) => item.lane)).size, 2);
+  for (const followUp of row.followUps) {
+    const anchor = row.blocks.find((block) => block.project.id === followUp.project.id && block.phase === 'correction');
+    assert.equal(followUp.top, anchor.top + 24);
+    assert.equal(followUp.endpointVisible, true);
+    assert.equal(Object.hasOwn(followUp, 'stackHidden'), false);
+    assert.ok(followUp.top + 22 <= row.top + row.height);
+  }
+  assert.ok(correction.top + 48 + stack.decorationOffsetPx <= row.top + row.height);
+  const expanded = dRow(projects, { expandedStacks: new Set([stack.key]) });
+  assert.deepEqual(expanded.blocks.map(phaseGeometry), row.blocks.map(phaseGeometry));
+  assert.deepEqual(expanded.followUps.map((item) => [item.project.id, item.first, item.last, item.left, item.width]), row.followUps.map((item) => [item.project.id, item.first, item.last, item.left, item.width]));
 });

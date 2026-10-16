@@ -104,7 +104,7 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
       members.sort((a, b) => a.project.id.localeCompare(b.project.id));
       const ids = members.map((member) => member.project.id);
       const key = 'D:' + JSON.stringify([ids, footprint]);
-      const stack = { key, expanded: expandedStacks.has(key), count: ids.length, projects: members.map((member) => member.project), blocks: [], representatives: [], representative: null, controlsId: 'd-stack-' + ids.join('-') };
+      const stack = { key, expanded: expandedStacks.has(key), count: ids.length, layerOffsetPx: 6, decorationOffsetPx: (ids.length - 1) * 6, projects: members.map((member) => member.project), blocks: [], representatives: [], representative: null, controlsId: 'd-stack-' + ids.join('-') };
       for (const member of members) stackByProject.set(member.project.id, { stack, members });
     }
     const emittedStacks = new Set();
@@ -114,16 +114,31 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
       const { stack, members } = entry;
       if (emittedStacks.has(stack.key)) return [];
       emittedStacks.add(stack.key);
-      // Expanded stacks reserve a full lane for the collapse control. Collapsed
-      // stacks still reserve distinct anchors for every individual tracking line.
-      let laneCount = stack.expanded ? 1 : members[0].laneCount;
+      // The back cards are decoration, not extra work. Reserve their real
+      // diagonal extent separately so they cannot cover another phase or case.
+      const phaseOffsets = new Map();
+      let collapsedLaneCount = members[0].laneCount;
+      if (!stack.expanded) {
+        const laneSpan = Math.max(1, Math.ceil((48 + stack.decorationOffsetPx + 4) / TIMELINE_LANE_HEIGHT));
+        const bandEnds = [];
+        for (const phase of [...members[0].phases].sort((a, b) => a.first - b.first || a.last - b.last)) {
+          let band = bandEnds.findIndex((end) => end < phase.first);
+          if (band < 0) band = bandEnds.length;
+          bandEnds[band] = phase.last + 1 + (stack.decorationOffsetPx - 2 * inset) / dayWidth;
+          phaseOffsets.set(phase.phase, band * laneSpan);
+        }
+        collapsedLaneCount = bandEnds.length * laneSpan;
+      }
+      // Expanded stacks reserve a full lane for their controls. Tracking lines
+      // always retain individual anchors, including when their work is hidden.
+      let laneCount = stack.expanded ? 1 : collapsedLaneCount;
       const offsets = members.map((member, index) => {
         if (!stack.expanded && (index === 0 || !member.followUp)) return 0;
         const offset = laneCount;
         laneCount += member.laneCount;
         return offset;
       });
-      return [{ members, first: Math.min(...members.map((member) => member.first)), last: Math.max(...members.map((member) => member.last)), laneCount, offsets, stack }];
+      return [{ members, first: Math.min(...members.map((member) => member.first)), last: Math.max(...members.map((member) => member.last)), laneCount, offsets, phaseOffsets, stack }];
     });
     const laneEnds = [];
     for (const unit of units) {
@@ -131,20 +146,23 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
       let lane = 0;
       while (Array.from({ length: unit.laneCount }, (_, offset) => laneEnds[lane + offset]).some((end) => end !== undefined && end >= unit.first)) lane++;
       let reservedEnd = unit.last + (unit.members.some((member) => member.followUp) ? 110 / dayWidth : 0);
-      if (unit.stack?.expanded) {
-        // A one-day bar can be narrower than its 44px collapse control. Reserve
-        // the visible control track too, without enlarging any real work phase.
+      if (unit.stack) {
+        // Controls and diagonal back cards may extend beyond a short phase.
+        // Reserve that display space without enlarging the real date interval.
         for (const phase of unit.members[0].phases.filter((item) => item.last >= firstDay && item.first <= lastDay)) {
           const visibleFirst = Math.max(firstDay, phase.first);
           const width = (Math.min(lastDay, phase.last) - visibleFirst + 1) * dayWidth - 2 * inset;
-          reservedEnd = Math.max(reservedEnd, visibleFirst + Math.max(44, width) / dayWidth);
+          const displayWidth = unit.stack.expanded ? Math.max(44, width) : width + unit.stack.decorationOffsetPx;
+          reservedEnd = Math.max(reservedEnd, visibleFirst + displayWidth / dayWidth);
         }
       }
       for (let offset = 0; offset < unit.laneCount; offset++) laneEnds[lane + offset] = reservedEnd;
       for (const [memberIndex, group] of unit.members.entries()) {
         const memberLane = lane + unit.offsets[memberIndex];
+        const phaseLane = (phase) => unit.stack && !unit.stack.expanded && (memberIndex === 0 || !group.followUp)
+          ? unit.phaseOffsets.get(phase.phase) : phase.phaseLane;
         for (const block of group.phases.filter((phase) => phase.last >= firstDay && phase.first <= lastDay)) {
-          block.lane = memberLane + block.phaseLane;
+          block.lane = memberLane + phaseLane(block);
           block.left = (Math.max(firstDay, block.first) - firstDay) * dayWidth + inset;
           block.width = (Math.min(lastDay, block.last) - Math.max(firstDay, block.first) + 1) * dayWidth - 2 * inset;
           block.top = top + 11 + block.lane * TIMELINE_LANE_HEIGHT;
@@ -158,7 +176,7 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
         }
         const followUp = group.followUp;
         if (followUp && followUp.last >= firstDay && followUp.first <= lastDay) {
-          followUp.lane = memberLane + group.phases.find((phase) => phase.phase === followUp.anchor.phase).phaseLane;
+          followUp.lane = memberLane + phaseLane(group.phases.find((phase) => phase.phase === followUp.anchor.phase));
           followUp.left = Math.max(0, (followUp.first - firstDay) * dayWidth - inset);
           const end = Math.min((today - firstDay + .5) * dayWidth, days * dayWidth);
           followUp.width = Math.max(0, end - followUp.left);

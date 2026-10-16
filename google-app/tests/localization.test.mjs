@@ -76,6 +76,7 @@ function browserDocument(html) {
   const document = { documentElement: container.querySelector('html'),
     getElementById(id) { return elements.get(id) || null; },
     createElement: element,
+    createElementNS(namespace, tag) { return element(tag); },
     querySelector(selector) { return container.querySelector(selector); },
     querySelectorAll(selector) { return container.querySelectorAll(selector); },
   };
@@ -362,6 +363,15 @@ function installStackFocusTracking(page) {
   page.document.querySelectorAll('button').forEach(addFocus);
 }
 
+function assertIconOnlyStackCollapse(button, html) {
+  assert.equal(button.textContent.trim(), '', 'collapse uses an icon without a visible label or count');
+  assert.equal(button.querySelectorAll('svg').length, 1);
+  assert.equal(button.querySelector('svg').getAttribute('aria-hidden'), 'true');
+  const css = /\.stack-collapse\s*\{([^}]*)\}/.exec(html)?.[1] || '';
+  assert.match(css, /(?:^|;)\s*width:\s*44px\s*;/);
+  assert.match(css, /(?:^|;)\s*height:\s*44px\s*;/);
+}
+
 test('D stack expansion preserves language, scroll, resize and navigation state without storing it or folding other workspaces', async(t) => {
   const value = sample();
   const base = { ...value.projects[0], start: '2026-12-20', end: '2026-12-30', correctionStart: '', correctionEnd: '', pendingReasons: [], followUp: [] };
@@ -396,6 +406,7 @@ test('D stack expansion preserves language, scroll, resize and navigation state 
   assert.equal(page.document.getElementById('project-details')?.open ?? false, false, 'the first activation only unfolds the stack');
   assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
   assert.equal(toggles()[0].getAttribute('aria-label'), '收合 2 個專案');
+  assertIconOnlyStackCollapse(toggles()[0], html);
   assert.equal(normalCards().filter((card) => ['O-971', 'O-972'].includes(card.getAttribute('data-project-id'))).length, 2);
   assert.equal(page.get('visible-count').textContent, visibleCount);
   const viewport = page.get('timeline-viewport');
@@ -405,6 +416,7 @@ test('D stack expansion preserves language, scroll, resize and navigation state 
   await page.click('language-toggle');
   assert.equal(viewport.scrollLeft, 24);
   assert.equal(toggles()[0].getAttribute('aria-label'), 'Collapse 2 projects');
+  assertIconOnlyStackCollapse(toggles()[0], html);
   assert.equal(toggles()[0].getAttribute('data-stack-key'), stackKey);
   assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
   page.resize(212);

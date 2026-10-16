@@ -35,6 +35,7 @@ function browserDocument(html) {
       setAttribute(name, value) { this.attributes[name] = String(value); if (name === 'id') { this.id = String(value); elements.set(this.id, this); } if (name === 'class') this.className = String(value); },
       getAttribute(name) { return this.attributes[name] ?? null; }, addEventListener(name, callback) { this.listeners.set(name, callback); }, async click() { return await this.listeners.get('click')?.({ target: this }); },
       querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }, querySelectorAll(selector) { return descendants(this).filter((child) => matches(child, selector)); },
+      getBoundingClientRect() { const left = parseFloat(this.style.left) || 0, width = this.id === 'timeline-viewport' ? this.clientWidth : parseFloat(this.style.width) || 44; return { left, right: left + width, top: 0, bottom: 44, width, height: 44 }; },
       showModal() { this.open = true; }, close() { this.open = false; },
     };
     Object.defineProperty(node, 'textContent', { get() { return this._text + this.children.map((child) => child.textContent).join(''); }, set(value) { this._text = String(value); this.children = []; } });
@@ -59,7 +60,7 @@ function browserDocument(html) {
       if (!voidTags.has(tag) && !/\/>$/.test(value)) stack.push(node);
     } else if (value.trim()) stack.at(-1)._text += value;
   }
-  const document = { documentElement: container.querySelector('html'), getElementById(id) { return elements.get(id) || null; }, createElement: element, querySelector(selector) { return container.querySelector(selector); }, querySelectorAll(selector) { return container.querySelectorAll(selector); } };
+  const document = { documentElement: container.querySelector('html'), getElementById(id) { return elements.get(id) || null; }, createElement: element, createElementNS(namespace, tag) { return element(tag); }, querySelector(selector) { return container.querySelector(selector); }, querySelectorAll(selector) { return container.querySelectorAll(selector); } };
   Object.defineProperty(document, 'title', { get() { return container.querySelector('title').textContent; }, set(value) { container.querySelector('title').textContent = value; } });
   return { document, elements };
 }
@@ -321,6 +322,15 @@ test('both Pages variants fail generically, reject the other field contract, and
   }
 });
 
+function assertIconOnlyStackCollapse(button, html) {
+  assert.equal(button.textContent.trim(), '', 'collapse uses an icon without a visible label or count');
+  assert.equal(button.querySelectorAll('svg').length, 1);
+  assert.equal(button.querySelector('svg').getAttribute('aria-hidden'), 'true');
+  const css = /\.stack-collapse\s*\{([^}]*)\}/.exec(html)?.[1] || '';
+  assert.match(css, /(?:^|;)\s*width:\s*44px\s*;/);
+  assert.match(css, /(?:^|;)\s*height:\s*44px\s*;/);
+}
+
 test('both Pages views unfold D stacks before opening individual authorized details and keep single D cases directly actionable', async () => {
   for (const teamspace of [false, true]) {
     const source = teamspace ? sample() : createPreviewPayload(new Date('2026-12-21T04:00:00Z'));
@@ -350,6 +360,7 @@ test('both Pages views unfold D stacks before opening individual authorized deta
     await toggles()[0].click();
     assert.equal(page.document.getElementById('project-details')?.open ?? false, false);
     assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
+    assertIconOnlyStackCollapse(toggles()[0], html);
     for (const project of source.projects.slice(0, 2)) {
       const card = cards().find((item) => item.getAttribute('data-project-id') === project.id);
       assert.ok(card, project.id);
@@ -369,6 +380,7 @@ test('both Pages views unfold D stacks before opening individual authorized deta
     await page.click('language-toggle');
     assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
     assert.equal(toggles()[0].getAttribute('aria-label'), 'Collapse 2 projects');
+    assertIconOnlyStackCollapse(toggles()[0], html);
     page.resize(900);
     assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
     await toggles()[0].click();
@@ -387,5 +399,65 @@ test('both Pages views unfold D stacks before opening individual authorized deta
     assert.equal(JSON.stringify(source), original);
     const reopened = await mount(html, source, { http: true });
     assert.equal(reopened.get('timeline-canvas').querySelector('.project-stack-toggle').getAttribute('aria-expanded'), 'false');
+  }
+});
+
+test('both Pages views show one rear layer per extra D project and a single icon control for complete multi-phase stacks', async () => {
+  for (const teamspace of [false, true]) for (const count of [2, 4, 6]) {
+    const source = teamspace ? sample() : createPreviewPayload(new Date('2026-12-21T04:00:00Z'));
+    const multiPhase = count === 6;
+    const base = { ...source.projects[0], start: '2026-12-20', end: '2026-12-30', correctionStart: multiPhase ? '2027-01-05' : '', correctionEnd: multiPhase ? '2027-01-10' : '', workspaceIds: ['D'], workspaceUnits: { D: 1 }, pendingReasons: [], followUp: [] };
+    source.projects = Array.from({ length: count }, (_, index) => ({ ...base, id: 'O-' + (991 + index), ...(teamspace ? { name: '虛構分層專案 ' + (index + 1) } : {}) }));
+    const original = JSON.stringify(source);
+    const url = teamspace ? DIRECT_TEAMSPACE_URL : DIRECT_PUBLIC_URL;
+    const html = await (teamspace ? renderTeamspaceEntry(url) : renderPublicEntry(url));
+    const page = await mount(html, source, { http: true, width: 900 });
+    const addFocus = (node) => { node.focus = () => { page.document.activeElement = node; }; return node; };
+    const createElement = page.document.createElement;
+    page.document.createElement = (...args) => addFocus(createElement(...args));
+    page.document.querySelectorAll('button').forEach(addFocus);
+    const canvas = page.get('timeline-canvas');
+    const toggles = () => canvas.querySelectorAll('.project-stack-toggle');
+    assert.equal(toggles().length, multiPhase ? 2 : 1);
+    const key = toggles()[0].getAttribute('data-stack-key');
+    const validateLayers = (card) => {
+      assert.equal(card.getAttribute('data-stack-key'), key);
+      assert.equal(card.getAttribute('aria-expanded'), 'false');
+      const layers = card.querySelectorAll('.stack-layer');
+      assert.equal(layers.length, count - 1, count + ' projects need exactly ' + (count - 1) + ' rear cards');
+      const indexes = layers.map((layer) => {
+        assert.equal(layer.getAttribute('aria-hidden'), 'true');
+        const index = Number(layer.getAttribute('data-stack-layer'));
+        assert.equal(layer.style['--stack-layer'], String(index));
+        return index;
+      }).sort((a, b) => a - b);
+      assert.deepEqual(indexes, Array.from({ length: count - 1 }, (_, index) => index + 1));
+    };
+    toggles().forEach(validateLayers);
+    await toggles()[0].click();
+    assert.equal(page.document.getElementById('project-details')?.open ?? false, false);
+    assert.equal(toggles().length, 1, 'all phases share one expanded collapse control');
+    const collapse = toggles()[0];
+    assertIconOnlyStackCollapse(collapse, html);
+    assert.equal(collapse.getAttribute('aria-label'), '收合 ' + count + ' 個專案');
+    assert.equal(collapse.getAttribute('aria-expanded'), 'true');
+    assert.equal(page.document.activeElement, collapse, 'first expansion focuses its unique icon control');
+    assert.equal(canvas.querySelectorAll('.stack-layer').length, 0);
+    assert.equal(canvas.querySelectorAll('.project-card').length, count * (multiPhase ? 2 : 1));
+    await page.click('language-toggle');
+    assert.equal(toggles().length, 1);
+    assertIconOnlyStackCollapse(toggles()[0], html);
+    assert.equal(toggles()[0].getAttribute('aria-label'), 'Collapse ' + count + ' projects');
+    page.resize(212);
+    assert.equal(toggles().length, 1);
+    assertIconOnlyStackCollapse(toggles()[0], html);
+    await toggles()[0].click();
+    assert.equal(toggles().length, multiPhase ? 2 : 1);
+    toggles().forEach(validateLayers);
+    assert.ok(toggles().includes(page.document.activeElement), 'collapse returns focus to a visible phase representative');
+    assert.equal(page.document.activeElement.getAttribute('data-stack-key'), key);
+    assert.equal(JSON.stringify(source), original);
+    assert.equal(page.calls.length, 1);
+    assertAnonymousRequest(page.calls[0], url);
   }
 });

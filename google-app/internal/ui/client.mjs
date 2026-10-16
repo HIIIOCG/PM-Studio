@@ -121,8 +121,12 @@ function toggleScheduleStack(stack, phase) {
   if (stack.expanded) scheduleState.expandedStacks.delete(stack.key);
   else scheduleState.expandedStacks.add(stack.key);
   renderScheduleTimeline(true);
-  const toggle = [...scheduleElement('timeline-canvas').querySelectorAll('.project-stack-toggle')]
-    .find((node) => node.getAttribute('data-stack-key') === stack.key && node.getAttribute('data-stack-phase') === phase);
+  const toggles = [...scheduleElement('timeline-canvas').querySelectorAll('.project-stack-toggle')]
+    .filter((node) => node.getAttribute('data-stack-key') === stack.key);
+  const viewportBounds = scheduleElement('timeline-viewport').getBoundingClientRect();
+  const toggle = toggles.find((node) => node.getAttribute('data-stack-phase') === phase)
+    || toggles.find((node) => { const bounds = node.getBoundingClientRect(); return bounds.right > viewportBounds.left && bounds.left < viewportBounds.right; })
+    || toggles[0];
   toggle?.focus({ preventScroll: true });
 }
 function renderScheduleTimeline(preserveScroll = false) {
@@ -190,19 +194,23 @@ function renderScheduleTimeline(preserveScroll = false) {
       members.setAttribute('aria-label', scheduleText('stackCount', { count: stack.count }));
       canvas.append(members); stackMembers.set(stack.key, members);
       if (!stack.expanded) continue;
-      for (const anchor of stack.representatives) {
-        const width = Math.max(44, anchor.width);
+      {
+        const left = Math.min(...stack.representatives.map((anchor) => anchor.left));
+        const right = Math.max(...stack.representatives.map((anchor) => anchor.left + anchor.width));
         const track = scheduleNode('div', 'stack-collapse-track');
-        track.style.left = anchor.left + 'px'; track.style.top = stack.top + anchor.phaseLane * 34 + 'px'; track.style.width = width + 'px';
-        const collapse = scheduleNode('button', 'project-stack-toggle stack-collapse', width < 120 ? '⌃' : scheduleText('collapseStack', { count: stack.count }) + ' ⌃');
+        track.style.left = left + 'px'; track.style.top = stack.top + 'px'; track.style.width = Math.max(44, right - left) + 'px';
+        const collapse = scheduleNode('button', 'project-stack-toggle stack-collapse');
         collapse.setAttribute('type', 'button');
         collapse.setAttribute('data-stack-key', stack.key);
-        collapse.setAttribute('data-stack-phase', anchor.phase);
+        collapse.setAttribute('data-stack-phase', 'all');
         collapse.setAttribute('aria-expanded', 'true');
         collapse.setAttribute('aria-label', scheduleText('collapseStack', { count: stack.count }));
         collapse.setAttribute('aria-controls', stack.controlsId);
-        collapse.style.width = Math.min(240, width) + 'px';
-        collapse.addEventListener('click', () => toggleScheduleStack(stack, anchor.phase));
+        const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('aria-hidden', 'true'); icon.setAttribute('focusable', 'false');
+        const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        chevron.setAttribute('d', 'm6 15 6-6 6 6'); icon.append(chevron); collapse.append(icon);
+        collapse.addEventListener('click', () => toggleScheduleStack(stack, 'all'));
         track.append(collapse); canvas.append(track);
       }
     }
@@ -230,8 +238,9 @@ function renderScheduleTimeline(preserveScroll = false) {
         card.setAttribute('aria-expanded', 'false');
         card.setAttribute('aria-controls', stack.controlsId);
         card.setAttribute('aria-label', scheduleText('expandStack', { count: stack.count }) + ' · ' + details);
-        for (let layer = Math.min(3, stack.count - 1); layer > 0; layer--) {
+        for (let layer = stack.count - 1; layer > 0; layer--) {
           const ghost = scheduleNode('span', 'stack-layer');
+          ghost.setAttribute('data-stack-layer', String(layer));
           ghost.setAttribute('aria-hidden', 'true'); ghost.style.setProperty('--stack-layer', String(layer));
           card.append(ghost);
         }
