@@ -34,7 +34,10 @@ function assertDirectUi(html, endpoint, teamspace = false) {
   assert.match(html, /<a class="brand brand-link" href="https:\/\/hiiiodigital\.com\/"/);
   assert.match(html, /<svg class="brand-logo"[^>]*fill="currentColor"[^>]*aria-hidden="true"/);
   assert.match(html, /<h1 id="schedule-title" class="sr-only">/);
-  assert.doesNotMatch(html, /class="heading-row"|\/studio-preview\/|@font-face|card-focus-label|data-tone/);
+  assert.doesNotMatch(html, /class="heading-row"|\/studio-preview\/|card-focus-label|data-tone/);
+  assert.equal((html.match(/@font-face\s*\{/g) || []).length, 2);
+  assert.equal((html.match(/url\(["']?data:font\/woff2;base64,/g) || []).length, 2);
+  assert.doesNotMatch(html, /url\(\s*["']?(?:https?:|\/\/|\/fonts\/)|fonts\.(?:googleapis|gstatic)\.com/);
   if (teamspace) {
     assert.match(html, /<title>PM Studio｜團隊專案排程<\/title>/);
     assert.match(html, /<meta name="robots" content="noindex,nofollow">/);

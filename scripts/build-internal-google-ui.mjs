@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { embedFontStyles } from './font-styles.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => readFile(resolve(root, path), 'utf8');
@@ -27,11 +28,12 @@ function verifyInternalManifest(source) {
 }
 
 export async function buildInternalGoogleUi({ outputDir = resolve(root, 'google-app/internal'), packageDir = resolve(root, 'local/google-app-bundle') } = {}) {
-  const [html, css, ...modules] = await Promise.all([
+  const [html, sourceCss, ...modules] = await Promise.all([
     read('web/dist/index.html'), read('web/dist/styles.css'), read('web/dist/app.mjs'),
     read('google-app/ui/common-contract.mjs'), read('google-app/ui/bridge.mjs'),
     read('web/dist/localization.mjs'), read('web/dist/workspace-help.mjs'), read('web/dist/neutral-refraction.mjs'), read('google-app/internal/ui/internal-contract.mjs'), read('google-app/internal/ui/client.mjs'),
   ]);
+  const css = await embedFontStyles(sourceCss);
   const script = '// Generated from PM Studio sources. No project records are embedded.\n(async () => {\n' + modules.map(browserSource).join('\n') + '\n})();';
   const template = html.replace('<title>PM Studio｜專案排程</title>', '<title>PM Studio｜團隊專案排程</title>')
     .replace('<h1 id="schedule-title" class="sr-only">專案排程</h1>', '<h1 id="schedule-title" class="sr-only">團隊專案排程</h1>')

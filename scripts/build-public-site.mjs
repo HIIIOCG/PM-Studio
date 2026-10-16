@@ -3,6 +3,7 @@ import { realpath as resolveFilesystemPath } from 'node:fs';
 import { promisify } from 'node:util';
 import { basename, dirname, resolve, relative, isAbsolute, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { embedFontStyles } from './font-styles.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // The callback resolver follows junctions and works in restricted Windows hosts
@@ -45,6 +46,7 @@ async function renderDirectEntry(appUrl, teamspace) {
     teamspace ? 'google-app/internal/ui/client.mjs' : 'google-app/ui/client.mjs',
   ];
   const [sourceHtml, sourceCss, ...modules] = await Promise.all(paths.map(read));
+  const css = await embedFontStyles(sourceCss);
   // Reuse the same view client, changing only its transport in the Pages bundle.
   const initializer = /^const readSchedule = createGoogleBridge\(\);\r?$/gm;
   const client = modules.at(-1);
@@ -59,7 +61,7 @@ async function renderDirectEntry(appUrl, teamspace) {
     .replace('<meta name="color-scheme" content="dark">',
       '<meta name="color-scheme" content="dark">\n  <meta name="referrer" content="no-referrer">'
       + (teamspace ? '\n  <meta name="robots" content="noindex,nofollow">' : ''))
-    .replace('<link rel="stylesheet" href="/styles.css">', () => '<style>\n' + sourceCss + teamspaceCss + '</style>')
+    .replace('<link rel="stylesheet" href="/styles.css">', () => '<style>\n' + css + teamspaceCss + '</style>')
     .replace('<script type="module" src="/app.mjs"></script>', () => '<script>\n' + safeScript(script) + '\n</script>');
   if (teamspace) html = html
     .replace('<title>PM Studio｜專案排程</title>', '<title>PM Studio｜團隊專案排程</title>')

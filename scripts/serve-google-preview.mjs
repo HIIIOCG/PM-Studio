@@ -62,7 +62,7 @@ export function createGooglePreviewServer({ now = new Date(), htmlPath = resolve
         const source = await readFile(htmlPath, 'utf8');
         const html = source.replace('<head>', '<head><script src="/mock-bridge.js"></script>').replace('id="preview-note" class="preview-note" hidden', 'id="preview-note" class="preview-note"');
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',
-          'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'" });
+          'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'" });
         return res.end(html);
       }
       if (req.method === 'GET' && url.pathname === '/mock-bridge.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' }); return res.end(previewBridge); }
