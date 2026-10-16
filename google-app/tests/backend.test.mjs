@@ -59,12 +59,15 @@ function setup(options = {}) {
 }
 const project = changes => plain(setup({ rows: [row(changes)] }).rpc('getTimeline').projects[0]);
 const hasReason = (item, reason) => assert.ok(item.pendingReasons.includes(reason));
+const slotHeader = [...header, '時段工作區'];
+const slotRow = (changes = {}, columns = slotHeader) => columns.map((label) => ({ '排程性質': '空白預約', '時段工作區': 'D', '目前排程開始': '2026-11', '目前排程結束': '2026-11', ...changes })[label] ?? '');
 
 test('single read uses formatted source values and returns only the exact public contract', () => {
   const env = setup();
   const payload = plain(env.rpc('getTimeline'));
-  assert.deepEqual(Object.keys(payload).sort(), ['schemaVersion', 'today', 'syncedAt', 'projects', 'workspaces', 'warnings'].sort());
-  assert.equal(payload.schemaVersion, 3);
+  assert.deepEqual(Object.keys(payload).sort(), ['schemaVersion', 'today', 'syncedAt', 'projects', 'reservationSlots', 'workspaces', 'warnings'].sort());
+  assert.equal(payload.schemaVersion, 4);
+  assert.deepEqual(payload.reservationSlots, []);
   assert.equal(payload.today, '2026-10-13');
   assert.equal(payload.syncedAt, '2026-10-12T16:30:00.000Z');
   assert.deepEqual(env.state.reads, [{ id: SOURCE_ID, range: "'專案列表'", settings: { majorDimension: 'ROWS', valueRenderOption: 'FORMATTED_VALUE' } }]);
@@ -75,6 +78,57 @@ test('single read uses formatted source values and returns only the exact public
     owner: 'FictionalOwner', status: '製作中（2026/10/12 更新）', deliveryGoal: 'FictionalGoal', notes: '', deliverySteps: 'FictionalDelivery'
   });
   assert.doesNotMatch(JSON.stringify(payload), /PrivateProject|PrivateCustomer|PrivateExecutor|PrivateContact|private\.example|FICTIONAL_SOURCE|sourceUrl|externalAlias|approved|originalStart/);
+});
+
+test('blank reservations are independent allowlisted slots without project identity, business text or allocation units', () => {
+  const slots = ['2026-11', '2026-12', '2027-01', '2027-02'].map((month) => slotRow({ '目前排程開始': month, '目前排程結束': month }));
+  const env = setup({ header: slotHeader, rows: [row({}, slotHeader), ...slots] });
+  const payload = plain(env.rpc('getTimeline'));
+  assert.equal(payload.schemaVersion, 4); assert.equal(env.state.reads.length, 1);
+  assert.equal(payload.projects.length, 1); assert.deepEqual(payload.projects[0].pendingReasons, []);
+  assert.deepEqual(payload.reservationSlots, ['2026-11', '2026-12', '2027-01', '2027-02'].map((month) => ({ workspaceId: 'D', start: month, end: month })));
+  assert.deepEqual(payload.warnings, []);
+  for (const slot of payload.reservationSlots) assert.deepEqual(Object.keys(slot).sort(), ['workspaceId', 'start', 'end'].sort());
+  slots[0][slotHeader.indexOf('目前排程開始')] = '2026-10';
+  assert.equal(env.rpc('getTimeline').reservationSlots[0].start, '2026-10', 'every read uses the current sheet');
+  assert.equal(env.state.reads.length, 2);
+});
+
+test('invalid blank-slot business cells and impossible dates produce only a fixed warning rather than projects or pending cards', () => {
+  const forbidden = [...header.slice(0, 13), ...header.slice(15, 23), header[24]];
+  const invalid = [
+    ...forbidden.map((label) => slotRow({ [label]: 'SecretSlotValue' })),
+    ...['', 'E', 'D,C', 'SecretWorkspace'].map((value) => slotRow({ '時段工作區': value })),
+    ...[['', '2026-11'], ['2026-11', ''], ['2027-02-29', '2027-03'], ['2026-13', '2027-01'], ['2027-03', '2027-02'], ['2026-11-31', '2026-12']]
+      .map(([start, end]) => slotRow({ '目前排程開始': start, '目前排程結束': end })),
+  ];
+  for (const item of invalid) {
+    const payload = plain(setup({ header: slotHeader, rows: [item, row({}, slotHeader)] }).rpc('getTimeline'));
+    assert.equal(payload.projects.length, 1); assert.equal(payload.reservationSlots.length, 0);
+    assert.deepEqual(payload.warnings, ['reservation-slot-invalid']);
+    assert.doesNotMatch(JSON.stringify(payload), /SecretSlotValue|SecretWorkspace/);
+    assert.deepEqual(payload.projects[0].pendingReasons, []);
+  }
+  const missingHeader = plain(setup({ rows: [slotRow({}, header), row()] }).rpc('getTimeline'));
+  assert.deepEqual(missingHeader.reservationSlots, []); assert.deepEqual(missingHeader.warnings, ['reservation-slot-invalid']);
+});
+
+test('slot dates keep source precision, moved headers work, and duplicate tuples warn once without claiming project IDs', () => {
+  const columns = [...slotHeader].reverse();
+  const valid = [
+    slotRow({ '時段工作區': 'A', '目前排程開始': '2028-02-29', '目前排程結束': '2028-03' }, columns),
+    slotRow({ '時段工作區': 'B', '目前排程開始': '2027-01', '目前排程結束': '2027-01-02' }, columns),
+    slotRow({ '時段工作區': 'C' }, columns), slotRow({}, columns),
+  ];
+  const payload = plain(setup({ header: columns, rows: [...valid, valid[3], valid[3], slotRow({ '案號': 'C-001', '專案／範圍': 'SecretSlotIdentity' }, columns), row({ '時段工作區': 'D' }, columns)] }).rpc('getTimeline'));
+  assert.deepEqual(payload.reservationSlots, [
+    { workspaceId: 'A', start: '2028-02-29', end: '2028-03' }, { workspaceId: 'B', start: '2027-01', end: '2027-01-02' },
+    { workspaceId: 'C', start: '2026-11', end: '2026-11' }, { workspaceId: 'D', start: '2026-11', end: '2026-11' },
+  ]);
+  assert.deepEqual(payload.warnings, ['reservation-slot-duplicate', 'reservation-slot-invalid']);
+  assert.equal(payload.projects.length, 1); assert.equal(payload.projects[0].id, 'C-001');
+  assert.deepEqual(payload.projects[0].workspaceIds, ['A'], 'Z alone neither creates a slot nor changes project assignment');
+  assert.doesNotMatch(JSON.stringify(payload), /SecretSlotIdentity|時段工作區/);
 });
 
 test('all 24 fictional projects remain present across statuses, missing dates and unassigned workspaces', () => {

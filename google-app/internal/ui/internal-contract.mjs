@@ -5,7 +5,8 @@ export const INTERNAL_PROJECT_FIELDS = Object.freeze(['name', 'customer', 'owner
 
 // Teamspace adds only its four explicit text fields to the public schedule.
 // Shared text, dates and enums retain the strict common validation; source links,
-// settings and original rows are never accepted in either contract.
+// settings and original rows are never accepted in either contract. Independent
+// reservationSlots pass through the common strict contract without team details.
 export function normalizeInternalTimelinePayload(payload) {
   if (!payload || typeof payload !== 'object' || !Array.isArray(payload.projects)) throw new Error('Invalid internal schedule.');
   const extras = payload.projects.map((project) => {

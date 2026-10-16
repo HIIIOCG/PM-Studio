@@ -325,6 +325,13 @@ html .project-card::before,
 html .project-card::after { display:none; }
 /* D stacks retain the representative's real date width; the layers are decorative. */
 .stack-members { position:absolute; inset:0; pointer-events:none; }
+.reservation-slot {
+  position:absolute; height:48px; display:flex; align-items:center; justify-content:center;
+  overflow:hidden; padding:0 12px; border:1px dashed #888; border-radius:24px;
+  background:#ffffff08; color:#c6c6c6; pointer-events:none;
+}
+.reservation-slot-label { font-size:11px; line-height:16px; white-space:nowrap; }
+.reservation-slot.is-narrow .reservation-slot-label { visibility:hidden; }
 .stack-members > button { pointer-events:auto; }
 html .project-card.stack-top { isolation:isolate; z-index:2; }
 html .stack-top .project-glass-surface { background-color:#2c2c2c; }

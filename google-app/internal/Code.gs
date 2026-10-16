@@ -44,10 +44,11 @@ function getTimeline() {
       || rows.some(function(row) { return !Array.isArray(row) || row.length > 64; })) throw new Error('source');
     const result = internalRows_(rows.slice(4));
     return {
-      schemaVersion: 3,
+      schemaVersion: 4,
       today: Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd'),
       syncedAt: new Date().toISOString(),
       projects: result.projects,
+      reservationSlots: result.reservationSlots,
       workspaces: PM_SCHEDULE_.workspaces.map(function(workspace) { return Object.assign({}, workspace); }),
       warnings: result.warnings
     };
@@ -65,6 +66,7 @@ function internalRows_(rows) {
   const details = new Map();
   rows.slice(1).forEach(function(row) {
     if (!Array.isArray(row)) return;
+    if (text_(row[header.indexOf('排程性質')]) === '空白預約') return;
     const id = text_(row[header.indexOf('案號')]);
     if (!/^(?:C|BG|P|D|O)-\d{3,}$/u.test(id)) return;
     const fields = {};
@@ -78,6 +80,7 @@ function internalRows_(rows) {
       // Dedicated source links, original rows and settings remain server-side.
       return Object.assign({}, project, details.get(project.id));
     }),
+    reservationSlots: result.reservationSlots,
     warnings: result.warnings
   };
 }

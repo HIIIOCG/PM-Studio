@@ -542,3 +542,44 @@ test('both Pages views compact adjacent D months visually and restore every expa
     assertAnonymousRequest(page.calls[0], url);
   }
 });
+test('blank reservation slots stay anonymous and independent from case counts in both views', async (t) => {
+  for (const teamspace of [false, true]) {
+    const source = teamspace ? sample() : createPreviewPayload(new Date('2026-12-21T04:00:00Z'));
+    const url = teamspace ? DIRECT_TEAMSPACE_URL : DIRECT_PUBLIC_URL;
+    const html = await (teamspace ? renderTeamspaceEntry(url) : renderPublicEntry(url));
+    const baseline = await mount(html, source, { http: true });
+    const expectedCount = baseline.get('visible-count').textContent;
+    const expectedPending = baseline.get('pending-count').textContent;
+    const data = { ...source, schemaVersion: 4, reservationSlots: ['2026-12', '2027-01', '2027-02', '2027-03'].map(month => ({ workspaceId: 'D', start: month, end: month })) };
+    const original = JSON.stringify(data);
+    const page = await mount(html, data, { http: true });
+    const slots = () => page.get('timeline-canvas').querySelectorAll('.reservation-slot');
+    const assertSlots = (label) => {
+      assert.equal(slots().length, 4);
+      for (const slot of slots()) {
+        assert.equal(slot.tagName, 'DIV'); assert.equal(slot.getAttribute('role'), 'img');
+        assert.equal(slot.textContent, label);
+        assert.equal(slot.getAttribute('data-project-id'), null);
+        assert.equal(slot.getAttribute('data-stack-key'), null);
+        assert.equal(slot.listeners.has('click'), false);
+        assert.equal(slot.getAttribute('data-start-precision'), 'month');
+        assert.match(slot.getAttribute('aria-label'), /D.*202[67]-/);
+      }
+    };
+    assertSlots('時段預約');
+    assert.equal(page.get('visible-count').textContent, expectedCount);
+    assert.equal(page.get('pending-count').textContent, expectedPending);
+    assert.equal(page.document.getElementById('project-details'), null);
+    await page.click('language-toggle'); page.resize(390);
+    assertSlots('Reserved period');
+    assert.equal(JSON.stringify(data), original);
+    const emptyCases = { ...data, projects: [] };
+    const onlySlots = await mount(html, emptyCases, { http: true });
+    assert.equal(onlySlots.get('load-notice').hidden, true);
+    assert.equal(onlySlots.get('timeline-grid').hidden, false);
+    assert.equal(onlySlots.get('pending-section').hidden, true);
+    assert.equal(onlySlots.get('visible-count').textContent, '目前區間 0 案');
+    assert.equal(onlySlots.get('timeline-canvas').querySelectorAll('.reservation-slot').length, 4);
+    assert.equal(onlySlots.get('timeline-canvas').querySelectorAll('.project-card').length, 0);
+  }
+});

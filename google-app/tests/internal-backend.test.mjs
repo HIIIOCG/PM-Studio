@@ -25,6 +25,8 @@ const privateKeys = ['name', 'customer', 'owner', 'status', 'deliveryGoal', 'not
 const internalOnlyKeys = ['name', 'customer', 'contact', 'assignee'];
 const plain = value => JSON.parse(JSON.stringify(value));
 const row = (changes = {}, columns = header) => columns.map(label => ({ ...defaults, ...changes })[label] ?? '');
+const slotHeader = [...header, '時段工作區'];
+const slotRow = (changes = {}) => slotHeader.map((label) => ({ '排程性質': '空白預約', '時段工作區': 'D', '目前排程開始': '2026-11', '目前排程結束': '2026-11', ...changes })[label] ?? '');
 const fixedDate = class extends Date {
   constructor(...args) { super(...(args.length ? args : ['2026-10-13T16:30:00.000Z'])); }
 };
@@ -78,7 +80,8 @@ test('one current source read returns the schedule plus the exact internal text 
   const payload = plain(env.rpc('getTimeline'));
   const base = plain(setup({}, publicCode).rpc('getTimeline'));
   assert.deepEqual(Object.keys(payload).sort(), Object.keys(base).sort());
-  assert.equal(payload.schemaVersion, 3);
+  assert.equal(payload.schemaVersion, 4);
+  assert.deepEqual(payload.reservationSlots, []);
   assert.equal(payload.today, '2026-10-14');
   assert.equal(payload.syncedAt, '2026-10-13T16:30:00.000Z');
   assert.deepEqual(env.state.reads, [{ id: SOURCE_ID, range: "'專案列表'", settings: { majorDimension: 'ROWS', valueRenderOption: 'FORMATTED_VALUE' } }]);
@@ -90,6 +93,21 @@ test('one current source read returns the schedule plus the exact internal text 
   assert.doesNotMatch(JSON.stringify(payload), /private\.example|FICTIONAL_INTERNAL_SOURCE|sourceUrl|rawRow|properties|originalStart/);
   const legacy = header.map(label => label === '專案主管' ? '負責人' : label);
   assert.equal(setup({ header: legacy, rows: [row({ '負責人': 'LegacyLead' }, legacy)] }).rpc('getTimeline').projects[0].owner, 'LegacyLead');
+});
+
+test('both adapters share identity-free slots and invalid slot IDs cannot overwrite a real project team detail', () => {
+  const values = [slotRow(), slotRow(), slotRow({ '時段工作區': 'B' }),
+    row({}, slotHeader), slotRow({ '案號': 'C-001', '專案／範圍': 'RejectedSlotName', '客戶': 'RejectedSlotCustomer', '窗口': 'RejectedSlotContact', '執行者': 'RejectedSlotAssignee' })];
+  const publicPayload = plain(setup({ header: slotHeader, rows: values }, publicCode).rpc('getTimeline'));
+  const team = setup({ header: slotHeader, rows: values }), payload = plain(team.rpc('getTimeline'));
+  assert.equal(payload.schemaVersion, 4); assert.equal(team.state.reads.length, 1);
+  assert.deepEqual(payload.reservationSlots, publicPayload.reservationSlots);
+  assert.deepEqual(payload.reservationSlots, [{ workspaceId: 'D', start: '2026-11', end: '2026-11' }, { workspaceId: 'B', start: '2026-11', end: '2026-11' }]);
+  assert.deepEqual(payload.warnings, ['reservation-slot-duplicate', 'reservation-slot-invalid']);
+  assert.equal(payload.projects.length, 1); assert.equal(payload.projects[0].name, 'FictionalProject');
+  assert.equal(payload.projects[0].customer, 'FictionalCustomer'); assert.equal(payload.projects[0].contact, 'FictionalContact'); assert.equal(payload.projects[0].assignee, 'FictionalExecutor');
+  assert.doesNotMatch(JSON.stringify(payload), /RejectedSlot/);
+  assert.deepEqual(payload.projects[0].pendingReasons, []);
 });
 
 test('source failures return a generic error and never substitute cached data', () => {

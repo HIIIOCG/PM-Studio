@@ -333,6 +333,13 @@ html .project-card::before,
 html .project-card::after { display:none; }
 /* D stacks retain the representative's real date width; the layers are decorative. */
 .stack-members { position:absolute; inset:0; pointer-events:none; }
+.reservation-slot {
+  position:absolute; height:48px; display:flex; align-items:center; justify-content:center;
+  overflow:hidden; padding:0 12px; border:1px dashed #888; border-radius:24px;
+  background:#ffffff08; color:#c6c6c6; pointer-events:none;
+}
+.reservation-slot-label { font-size:11px; line-height:16px; white-space:nowrap; }
+.reservation-slot.is-narrow .reservation-slot-label { visibility:hidden; }
 .stack-members > button { pointer-events:auto; }
 html .project-card.stack-top { isolation:isolate; z-index:2; }
 html .stack-top .project-glass-surface { background-color:#2c2c2c; }
@@ -584,7 +591,7 @@ function projectPendingReasons(project) {
   if (!project.customerCode) reasons.add('customer-code');
   return [...reasons];
 }
-function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = TIMELINE_DAYS, today = null, expandedStacks = new Set() }) {
+function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = TIMELINE_DAYS, today = null, expandedStacks = new Set(), reservationSlots = [] }) {
   if (!Number.isFinite(dayWidth) || dayWidth <= 0) throw new Error('Invalid timeline scale.');
   let top = TIMELINE_AXIS_HEIGHT;
   const lastDay = firstDay + days - 1;
@@ -605,7 +612,7 @@ function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = 
       return { project, phases, followUp, laneCount: phaseLaneEnds.length, first: Math.min(...items.map((item) => item.first)), last: Math.max(...items.map((item) => item.last)) };
     }).filter((group) => [...group.phases, ...(group.followUp ? [group.followUp] : [])].some((item) => item.last >= firstDay && item.first <= lastDay))
       .sort((a, b) => a.first - b.first || a.last - b.last || a.project.id.localeCompare(b.project.id));
-    const blocks = [], followUps = [], stacks = [];
+    const blocks = [], followUps = [], stacks = [], slotBlocks = [];
     // Only identical complete phase footprints share a visual stack. Tracking
     // intervals and screen clipping never establish membership or change its key.
     const footprintGroups = new Map();
@@ -664,11 +671,32 @@ function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = 
       const controlLane = stack.expanded ? laneCount++ : null;
       return [{ members, first: Math.min(...members.map((member) => member.first)), last: Math.max(...members.map((member) => member.last)), laneCount, offsets, phaseOffsets, controlLane, stack }];
     });
+    const slotUnits = reservationSlots.filter((slot) => slot.workspaceId === workspace.id).flatMap((slot) => {
+      const range = timelineRange(slot.start, slot.end);
+      if (!range || range.last < firstDay || range.first > lastDay) return [];
+      // Non-case slots carry only their authorized workspace and dates. They
+      // never acquire project identity, units, details, tracking, or stack state.
+      return [{ slot: { workspaceId: workspace.id, start: slot.start, end: slot.end, ...range }, first: range.first, last: range.last, laneCount: 1 }];
+    });
+    if (slotUnits.length) {
+      units.push(...slotUnits);
+      units.sort((a, b) => a.first - b.first || a.last - b.last || Number(!!a.slot) - Number(!!b.slot)
+        || (a.slot ? (a.slot.start + ':' + a.slot.end).localeCompare(b.slot.start + ':' + b.slot.end) : a.members[0].project.id.localeCompare(b.members[0].project.id)));
+    }
     const laneEnds = [];
     for (const unit of units) {
       // Keep a project's phases and tracking line together, with room for its endpoint.
       let lane = 0;
       while (Array.from({ length: unit.laneCount }, (_, offset) => laneEnds[lane + offset]).some((end) => end !== undefined && end >= unit.first)) lane++;
+      if (unit.slot) {
+        laneEnds[lane] = unit.last;
+        const slot = unit.slot;
+        slot.left = (Math.max(firstDay, slot.first) - firstDay) * dayWidth + inset;
+        slot.width = (Math.min(lastDay, slot.last) - Math.max(firstDay, slot.first) + 1) * dayWidth - 2 * inset;
+        slot.top = top + 11 + lane * TIMELINE_LANE_HEIGHT;
+        slotBlocks.push(slot);
+        continue;
+      }
       let reservedEnd = unit.last + (unit.members.some((member) => member.followUp) ? 110 / dayWidth : 0);
       if (unit.stack) {
         // Controls and diagonal back cards may extend beyond a short phase.
@@ -741,6 +769,7 @@ function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = 
     const height = Math.max(1, laneEnds.length) * TIMELINE_LANE_HEIGHT + 18;
     const row = { workspace, top, height, blocks, followUps };
     if (workspace.id === 'D') row.stacks = stacks;
+    if (reservationSlots.length) row.reservationSlots = slotBlocks;
     top += height;
     return row;
   });
@@ -751,6 +780,7 @@ const PENDING_REASONS = Object.freeze(['no-workspace', 'workspace-values', 'prod
 const CUSTOMER_TYPES = Object.freeze(['VTuber個人', 'VTuber公司', '遊戲公司', '其他']);
 const PROJECT_DETAIL_FIELDS = Object.freeze(['owner', 'status', 'deliveryGoal', 'notes', 'deliverySteps']);
 const SCHEDULE_WARNINGS = Object.freeze(['project-id-missing', 'project-id-invalid']);
+const RESERVATION_SLOT_WARNINGS = Object.freeze(['reservation-slot-invalid', 'reservation-slot-duplicate']);
 const SCHEDULE_KINDS = Object.freeze(['production', 'reservation']);
 const FOLLOW_UP_STATUSES = Object.freeze(['customer-confirmation', 'payment']);
 function scheduleKeys(value, allowed, required = allowed) {
@@ -760,9 +790,18 @@ function scheduleDateValue(value) {
   if (typeof value !== 'string' || (value !== '' && !/^\d{4}-\d{2}(?:-\d{2})?$/.test(value))) throw new Error('Invalid schedule date.');
   return value;
 }
+function reservationDateBoundary(value, last) {
+  const monthOnly = /^\d{4}-\d{2}$/.test(value);
+  const day = monthOnly ? value + '-01' : value;
+  const date = new Date(day + 'T00:00:00Z');
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== day) return null;
+  if (monthOnly && last) date.setUTCMonth(date.getUTCMonth() + 1, 0);
+  return date.getTime();
+}
 function normalizeTimelinePayload(payload) {
-  scheduleKeys(payload, ['schemaVersion', 'today', 'syncedAt', 'projects', 'workspaces', 'warnings']);
-  if (payload.schemaVersion !== 3 || !/^\d{4}-\d{2}-\d{2}$/.test(payload.today) || !Number.isFinite(new Date(payload.today + 'T00:00:00Z').getTime()) || new Date(payload.today + 'T00:00:00Z').toISOString().slice(0, 10) !== payload.today) throw new Error('Invalid schedule version or day.');
+  const version4 = payload?.schemaVersion === 4;
+  scheduleKeys(payload, ['schemaVersion', 'today', 'syncedAt', 'projects', 'workspaces', 'warnings', ...(version4 ? ['reservationSlots'] : [])]);
+  if (![3, 4].includes(payload.schemaVersion) || !/^\d{4}-\d{2}-\d{2}$/.test(payload.today) || !Number.isFinite(new Date(payload.today + 'T00:00:00Z').getTime()) || new Date(payload.today + 'T00:00:00Z').toISOString().slice(0, 10) !== payload.today) throw new Error('Invalid schedule version or day.');
   if (typeof payload.syncedAt !== 'string' || !Number.isFinite(Date.parse(payload.syncedAt))) throw new Error('Invalid read time.');
   if (!Array.isArray(payload.workspaces) || payload.workspaces.length !== 4) throw new Error('Invalid workspaces.');
   const workspaces = payload.workspaces.map((space, index) => {
@@ -771,7 +810,22 @@ function normalizeTimelinePayload(payload) {
     if ('usualLoad' in space && (!Number.isInteger(space.usualLoad) || space.usualLoad < 1)) throw new Error('Invalid usual load.');
     return { ...space };
   });
-  if (!Array.isArray(payload.warnings) || payload.warnings.some((value) => !SCHEDULE_WARNINGS.includes(value))) throw new Error('Invalid warning.');
+  const allowedWarnings = version4 ? [...SCHEDULE_WARNINGS, ...RESERVATION_SLOT_WARNINGS] : SCHEDULE_WARNINGS;
+  if (!Array.isArray(payload.warnings) || payload.warnings.some((value) => !allowedWarnings.includes(value))) throw new Error('Invalid warning.');
+  const rawSlots = version4 ? payload.reservationSlots : [];
+  if (!Array.isArray(rawSlots) || rawSlots.length > 1000) throw new Error('Invalid reservation slots.');
+  const slotKeys = new Set();
+  const reservationSlots = rawSlots.map((slot) => {
+    scheduleKeys(slot, ['workspaceId', 'start', 'end']);
+    if (!['A', 'B', 'C', 'D'].includes(slot.workspaceId)) throw new Error('Invalid reservation workspace.');
+    scheduleDateValue(slot.start); scheduleDateValue(slot.end);
+    const first = reservationDateBoundary(slot.start, false), last = reservationDateBoundary(slot.end, true);
+    if (first === null || last === null || first > last) throw new Error('Invalid reservation dates.');
+    const key = JSON.stringify([slot.workspaceId, slot.start, slot.end]);
+    if (slotKeys.has(key)) throw new Error('Duplicate reservation slot.');
+    slotKeys.add(key);
+    return { workspaceId: slot.workspaceId, start: slot.start, end: slot.end };
+  });
   if (!Array.isArray(payload.projects) || payload.projects.length > 1000) throw new Error('Invalid projects.');
   const ids = new Set();
   const projects = payload.projects.map((project) => {
@@ -793,7 +847,7 @@ function normalizeTimelinePayload(payload) {
     if (!Array.isArray(project.pendingReasons) || project.pendingReasons.some((value) => !PENDING_REASONS.includes(value))) throw new Error('Invalid pending reason.');
     return { ...project, followUp: [...project.followUp], workspaceIds: [...project.workspaceIds], workspaceUnits: { ...project.workspaceUnits }, pendingReasons: [...new Set(project.pendingReasons)] };
   });
-  return { schemaVersion: 3, today: payload.today, syncedAt: payload.syncedAt, workspaces, projects, warnings: [...new Set(payload.warnings)] };
+  return { schemaVersion: payload.schemaVersion, today: payload.today, syncedAt: payload.syncedAt, workspaces, projects, reservationSlots, warnings: [...new Set(payload.warnings)] };
 }
 
 function createGoogleBridge(runner = globalThis.google?.script?.run) {
@@ -1360,7 +1414,8 @@ const INTERNAL_PROJECT_FIELDS = Object.freeze(['name', 'customer', 'owner', 'sta
 
 // Teamspace adds only its four explicit text fields to the public schedule.
 // Shared text, dates and enums retain the strict common validation; source links,
-// settings and original rows are never accepted in either contract.
+// settings and original rows are never accepted in either contract. Independent
+// reservationSlots pass through the common strict contract without team details.
 function normalizeInternalTimelinePayload(payload) {
   if (!payload || typeof payload !== 'object' || !Array.isArray(payload.projects)) throw new Error('Invalid internal schedule.');
   const extras = payload.projects.map((project) => {
@@ -1458,7 +1513,7 @@ function renderScheduleNotice() {
   if (scheduleState.loading) key = 'loading';
   else if (scheduleState.failed) key = scheduleState.payload ? 'staleError' : 'loadError';
   else if (scheduleState.payload?.warnings.length) key = 'warning';
-  else if (scheduleState.payload && !scheduleState.payload.projects.length) key = 'empty';
+  else if (scheduleState.payload && !scheduleState.payload.projects.length && !scheduleState.payload.reservationSlots.length) key = 'empty';
   notice.hidden = !key;
   notice.classList.toggle('error', scheduleState.failed && !scheduleState.loading);
   notice.classList.toggle('warning', key === 'warning');
@@ -1527,7 +1582,7 @@ function renderScheduleTimeline(preserveScroll = false) {
   }
   const { payload, firstDay } = scheduleState;
   const today = timelineDay(scheduleState.today);
-  const layout = buildTimelineLayout(payload.projects, payload.workspaces, firstDay, { ...scale, today, expandedStacks: scheduleState.expandedStacks });
+  const layout = buildTimelineLayout(payload.projects, payload.workspaces, firstDay, { ...scale, today, expandedStacks: scheduleState.expandedStacks, reservationSlots: payload.reservationSlots });
   const dayWidth = scale.dayWidth;
   scheduleState.scale = scale;
   scheduleState.layout = layout;
@@ -1562,7 +1617,18 @@ function renderScheduleTimeline(preserveScroll = false) {
     const label = scheduleNode('div', 'workspace-label'); label.style.height = row.height + 'px';
     workspaceHelp.render(label, row.workspace.id); labels.append(label);
     const rule = scheduleNode('div', 'row-rule'); rule.style.top = row.top + row.height + 'px'; canvas.append(rule);
-    if (!row.blocks.length && !row.followUps.length) { const empty = scheduleNode('span', 'empty-row', scheduleText('noWork')); empty.style.top = row.top + 43 + 'px'; canvas.append(empty); }
+    if (!row.blocks.length && !row.followUps.length && !(row.reservationSlots || []).length) { const empty = scheduleNode('span', 'empty-row', scheduleText('noWork')); empty.style.top = row.top + 43 + 'px'; canvas.append(empty); }
+    for (const slot of row.reservationSlots || []) {
+      const marker = scheduleNode('div', 'reservation-slot' + (slot.width < 80 ? ' is-narrow' : ''));
+      marker.setAttribute('role', 'img');
+      marker.setAttribute('aria-label', scheduleText('reservation') + ' · ' + scheduleText('workspace') + ' ' + slot.workspaceId + ' · ' + rangeText(slot.start, slot.end));
+      marker.setAttribute('data-slot-workspace', slot.workspaceId);
+      marker.setAttribute('data-slot-start', slot.start); marker.setAttribute('data-slot-end', slot.end);
+      marker.setAttribute('data-start-precision', slot.startPrecision); marker.setAttribute('data-end-precision', slot.endPrecision);
+      marker.style.left = slot.left + 'px'; marker.style.top = slot.top + 'px'; marker.style.width = slot.width + 'px';
+      marker.append(scheduleNode('span', 'reservation-slot-label', scheduleText('reservation')));
+      canvas.append(marker);
+    }
     const stacks = new Map((row.stacks || []).map((stack) => [stack.key, stack]));
     const stackMembers = new Map();
     for (const stack of stacks.values()) {

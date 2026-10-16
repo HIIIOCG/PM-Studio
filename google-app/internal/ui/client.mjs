@@ -80,7 +80,7 @@ function renderScheduleNotice() {
   if (scheduleState.loading) key = 'loading';
   else if (scheduleState.failed) key = scheduleState.payload ? 'staleError' : 'loadError';
   else if (scheduleState.payload?.warnings.length) key = 'warning';
-  else if (scheduleState.payload && !scheduleState.payload.projects.length) key = 'empty';
+  else if (scheduleState.payload && !scheduleState.payload.projects.length && !scheduleState.payload.reservationSlots.length) key = 'empty';
   notice.hidden = !key;
   notice.classList.toggle('error', scheduleState.failed && !scheduleState.loading);
   notice.classList.toggle('warning', key === 'warning');
@@ -149,7 +149,7 @@ function renderScheduleTimeline(preserveScroll = false) {
   }
   const { payload, firstDay } = scheduleState;
   const today = timelineDay(scheduleState.today);
-  const layout = buildTimelineLayout(payload.projects, payload.workspaces, firstDay, { ...scale, today, expandedStacks: scheduleState.expandedStacks });
+  const layout = buildTimelineLayout(payload.projects, payload.workspaces, firstDay, { ...scale, today, expandedStacks: scheduleState.expandedStacks, reservationSlots: payload.reservationSlots });
   const dayWidth = scale.dayWidth;
   scheduleState.scale = scale;
   scheduleState.layout = layout;
@@ -184,7 +184,18 @@ function renderScheduleTimeline(preserveScroll = false) {
     const label = scheduleNode('div', 'workspace-label'); label.style.height = row.height + 'px';
     workspaceHelp.render(label, row.workspace.id); labels.append(label);
     const rule = scheduleNode('div', 'row-rule'); rule.style.top = row.top + row.height + 'px'; canvas.append(rule);
-    if (!row.blocks.length && !row.followUps.length) { const empty = scheduleNode('span', 'empty-row', scheduleText('noWork')); empty.style.top = row.top + 43 + 'px'; canvas.append(empty); }
+    if (!row.blocks.length && !row.followUps.length && !(row.reservationSlots || []).length) { const empty = scheduleNode('span', 'empty-row', scheduleText('noWork')); empty.style.top = row.top + 43 + 'px'; canvas.append(empty); }
+    for (const slot of row.reservationSlots || []) {
+      const marker = scheduleNode('div', 'reservation-slot' + (slot.width < 80 ? ' is-narrow' : ''));
+      marker.setAttribute('role', 'img');
+      marker.setAttribute('aria-label', scheduleText('reservation') + ' · ' + scheduleText('workspace') + ' ' + slot.workspaceId + ' · ' + rangeText(slot.start, slot.end));
+      marker.setAttribute('data-slot-workspace', slot.workspaceId);
+      marker.setAttribute('data-slot-start', slot.start); marker.setAttribute('data-slot-end', slot.end);
+      marker.setAttribute('data-start-precision', slot.startPrecision); marker.setAttribute('data-end-precision', slot.endPrecision);
+      marker.style.left = slot.left + 'px'; marker.style.top = slot.top + 'px'; marker.style.width = slot.width + 'px';
+      marker.append(scheduleNode('span', 'reservation-slot-label', scheduleText('reservation')));
+      canvas.append(marker);
+    }
     const stacks = new Map((row.stacks || []).map((stack) => [stack.key, stack]));
     const stackMembers = new Map();
     for (const stack of stacks.values()) {

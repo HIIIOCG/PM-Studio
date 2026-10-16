@@ -65,7 +65,7 @@ export function projectPendingReasons(project) {
   if (!project.customerCode) reasons.add('customer-code');
   return [...reasons];
 }
-export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = TIMELINE_DAYS, today = null, expandedStacks = new Set() }) {
+export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = TIMELINE_DAYS, today = null, expandedStacks = new Set(), reservationSlots = [] }) {
   if (!Number.isFinite(dayWidth) || dayWidth <= 0) throw new Error('Invalid timeline scale.');
   let top = TIMELINE_AXIS_HEIGHT;
   const lastDay = firstDay + days - 1;
@@ -86,7 +86,7 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
       return { project, phases, followUp, laneCount: phaseLaneEnds.length, first: Math.min(...items.map((item) => item.first)), last: Math.max(...items.map((item) => item.last)) };
     }).filter((group) => [...group.phases, ...(group.followUp ? [group.followUp] : [])].some((item) => item.last >= firstDay && item.first <= lastDay))
       .sort((a, b) => a.first - b.first || a.last - b.last || a.project.id.localeCompare(b.project.id));
-    const blocks = [], followUps = [], stacks = [];
+    const blocks = [], followUps = [], stacks = [], slotBlocks = [];
     // Only identical complete phase footprints share a visual stack. Tracking
     // intervals and screen clipping never establish membership or change its key.
     const footprintGroups = new Map();
@@ -145,11 +145,32 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
       const controlLane = stack.expanded ? laneCount++ : null;
       return [{ members, first: Math.min(...members.map((member) => member.first)), last: Math.max(...members.map((member) => member.last)), laneCount, offsets, phaseOffsets, controlLane, stack }];
     });
+    const slotUnits = reservationSlots.filter((slot) => slot.workspaceId === workspace.id).flatMap((slot) => {
+      const range = timelineRange(slot.start, slot.end);
+      if (!range || range.last < firstDay || range.first > lastDay) return [];
+      // Non-case slots carry only their authorized workspace and dates. They
+      // never acquire project identity, units, details, tracking, or stack state.
+      return [{ slot: { workspaceId: workspace.id, start: slot.start, end: slot.end, ...range }, first: range.first, last: range.last, laneCount: 1 }];
+    });
+    if (slotUnits.length) {
+      units.push(...slotUnits);
+      units.sort((a, b) => a.first - b.first || a.last - b.last || Number(!!a.slot) - Number(!!b.slot)
+        || (a.slot ? (a.slot.start + ':' + a.slot.end).localeCompare(b.slot.start + ':' + b.slot.end) : a.members[0].project.id.localeCompare(b.members[0].project.id)));
+    }
     const laneEnds = [];
     for (const unit of units) {
       // Keep a project's phases and tracking line together, with room for its endpoint.
       let lane = 0;
       while (Array.from({ length: unit.laneCount }, (_, offset) => laneEnds[lane + offset]).some((end) => end !== undefined && end >= unit.first)) lane++;
+      if (unit.slot) {
+        laneEnds[lane] = unit.last;
+        const slot = unit.slot;
+        slot.left = (Math.max(firstDay, slot.first) - firstDay) * dayWidth + inset;
+        slot.width = (Math.min(lastDay, slot.last) - Math.max(firstDay, slot.first) + 1) * dayWidth - 2 * inset;
+        slot.top = top + 11 + lane * TIMELINE_LANE_HEIGHT;
+        slotBlocks.push(slot);
+        continue;
+      }
       let reservedEnd = unit.last + (unit.members.some((member) => member.followUp) ? 110 / dayWidth : 0);
       if (unit.stack) {
         // Controls and diagonal back cards may extend beyond a short phase.
@@ -222,6 +243,7 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
     const height = Math.max(1, laneEnds.length) * TIMELINE_LANE_HEIGHT + 18;
     const row = { workspace, top, height, blocks, followUps };
     if (workspace.id === 'D') row.stacks = stacks;
+    if (reservationSlots.length) row.reservationSlots = slotBlocks;
     top += height;
     return row;
   });

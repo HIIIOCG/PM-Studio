@@ -49,10 +49,11 @@ function getTimeline() {
       || rows.some(function(row) { return !Array.isArray(row) || row.length > 64; })) throw new Error('source');
     const result = publicRows_(rows.slice(4));
     return {
-      schemaVersion: 3,
+      schemaVersion: 4,
       today: Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd'),
       syncedAt: new Date().toISOString(),
       projects: result.projects,
+      reservationSlots: result.reservationSlots,
       workspaces: PM_SCHEDULE_.workspaces.map(function(workspace) { return Object.assign({}, workspace); }),
       warnings: result.warnings
     };
@@ -72,10 +73,17 @@ function publicRows_(rows) {
   });
   const nonempty = header.filter(Boolean);
   if (new Set(nonempty).size !== nonempty.length || PM_SCHEDULE_.required.some(function(label) { return !header.includes(label); })) throw new Error('headers');
-  const ids = new Set(), warnings = new Set(), projects = [];
+  const ids = new Set(), slotKeys = new Set(), warnings = new Set(), projects = [], reservationSlots = [];
   rows.slice(1).forEach(function(row) {
     if (!Array.isArray(row) || !row.some(function(value) { return text_(value) !== ''; })) return;
     const field = function(label) { return text_(row[header.indexOf(label)]); };
+    if (field('排程性質') === '空白預約') {
+      const slot = reservationSlot_(row, header);
+      if (!slot) { warnings.add('reservation-slot-invalid'); return; }
+      const key = JSON.stringify([slot.workspaceId, slot.start, slot.end]);
+      if (slotKeys.has(key)) { warnings.add('reservation-slot-duplicate'); return; }
+      slotKeys.add(key); reservationSlots.push(slot); return;
+    }
     const id = field('案號');
     if (!id) { warnings.add('project-id-missing'); return; }
     if (!/^(?:C|BG|P|D|O)-\d{3,}$/u.test(id)) { warnings.add('project-id-invalid'); return; }
@@ -132,7 +140,19 @@ function publicRows_(rows) {
     });
     projects.push(project);
   });
-  return { projects: projects, warnings: Array.from(warnings) };
+  return { projects: projects, reservationSlots: reservationSlots, warnings: Array.from(warnings) };
+}
+
+function reservationSlot_(row, header) {
+  const field = function(label) { return text_(row[header.indexOf(label)]); };
+  const business = ['案號', '目前交付目標', '專案／範圍', '客戶', '專案主管', '狀態', '原始開始', '原始結束',
+    '延長修正／補充', '交付步驟（參考）', '資料', '窗口', '執行者', '修正開始', '修正結束', '客戶編號', '客戶類型',
+    '工作區 A 占用', '工作區 B 占用', '工作區 C 占用', '工作區 D 占用', '未結事項'];
+  const workspaceId = field('時段工作區'), start = dateText_(field('目前排程開始')), end = dateText_(field('目前排程結束'));
+  if (business.some(function(label) { return field(label) !== ''; }) || !/^[A-D]$/u.test(workspaceId) || !validRange_(start, end)) return null;
+  // Slots have no project identity, business text or allocation units. Source
+  // notes and all other fields remain server-side rather than becoming details.
+  return { workspaceId: workspaceId, start: start, end: end };
 }
 
 function dateText_(value) {
