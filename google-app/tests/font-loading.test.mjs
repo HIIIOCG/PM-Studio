@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdtemp, rm, readdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, mkdtemp, rm, readdir } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { embedFontStyles, validateWoff2 } from '../../scripts/font-styles.mjs';
@@ -17,6 +17,7 @@ const teamUrl = 'https://script.google.com/macros/s/FICTIONAL_FONT_TEAMSPACE_TES
 const faces = css => [...css.matchAll(/@font-face\s*\{[^}]*\}/g)].map(match => match[0]);
 
 async function temporaryDirectory(t) {
+  await mkdir(local, { recursive: true });
   const directory = await mkdtemp(resolve(local, 'font-loading-test-'));
   t.after(async () => {
     assert(directory.startsWith(local + sep));
