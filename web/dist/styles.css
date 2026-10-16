@@ -331,6 +331,7 @@ html .project-card::after { display:none; }
   background:#ffffff08; color:#c6c6c6; pointer-events:none;
 }
 .reservation-slot-label { font-size:11px; line-height:16px; white-space:nowrap; }
+.reservation-slot.is-narrow { padding:0; }
 .reservation-slot.is-narrow .reservation-slot-label { visibility:hidden; }
 .stack-members > button { pointer-events:auto; }
 html .project-card.stack-top { isolation:isolate; z-index:2; }

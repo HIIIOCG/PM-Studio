@@ -131,6 +131,24 @@ test('slot dates keep source precision, moved headers work, and duplicate tuples
   assert.doesNotMatch(JSON.stringify(payload), /SecretSlotIdentity|時段工作區/);
 });
 
+test('blank slots require every known business header without changing ordinary project optional-column compatibility', () => {
+  const optionalBusiness = ['目前交付目標', '專案／範圍', '客戶', '專案主管', '狀態', '延長修正／補充', '交付步驟（參考）', '資料', '窗口', '執行者', '客戶類型', '未結事項'];
+  for (const label of optionalBusiness) for (const renamed of [false, true]) {
+    const columns = renamed ? slotHeader.map((item) => item === label ? 'UnknownBusinessHeader' : item) : slotHeader.filter((item) => item !== label);
+    const source = [slotRow(renamed ? { UnknownBusinessHeader: 'SecretHiddenBusinessValue' } : {}, columns), row({}, columns)];
+    const payload = plain(setup({ header: columns, rows: source }).rpc('getTimeline'));
+    assert.deepEqual(payload.reservationSlots, [], label + ' must remain a known empty business column');
+    assert.deepEqual(payload.warnings, ['reservation-slot-invalid']);
+    assert.equal(payload.projects.length, 1, 'ordinary projects retain the existing optional-header behavior');
+    assert.equal(payload.projects[0].id, 'C-001');
+    assert.doesNotMatch(JSON.stringify(payload), /SecretHiddenBusinessValue|UnknownBusinessHeader/);
+  }
+  const legacy = slotHeader.map((label) => label === '專案主管' ? '負責人' : label).reverse();
+  const payload = plain(setup({ header: legacy, rows: [slotRow({}, legacy), row({ '負責人': 'LegacyLead' }, legacy)] }).rpc('getTimeline'));
+  assert.deepEqual(payload.reservationSlots, [{ workspaceId: 'D', start: '2026-11', end: '2026-11' }]);
+  assert.deepEqual(payload.warnings, []); assert.equal(payload.projects[0].owner, 'LegacyLead');
+});
+
 test('all 24 fictional projects remain present across statuses, missing dates and unassigned workspaces', () => {
   const rows = Array.from({ length: 24 }, (_, index) => row({
     '案號': ['C', 'BG', 'P', 'D', 'O'][index % 5] + '-' + String(index + 1).padStart(3, '0'),

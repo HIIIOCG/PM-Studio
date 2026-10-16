@@ -149,7 +149,7 @@ function reservationSlot_(row, header) {
     '延長修正／補充', '交付步驟（參考）', '資料', '窗口', '執行者', '修正開始', '修正結束', '客戶編號', '客戶類型',
     '工作區 A 占用', '工作區 B 占用', '工作區 C 占用', '工作區 D 占用', '未結事項'];
   const workspaceId = field('時段工作區'), start = dateText_(field('目前排程開始')), end = dateText_(field('目前排程結束'));
-  if (business.some(function(label) { return field(label) !== ''; }) || !/^[A-D]$/u.test(workspaceId) || !validRange_(start, end)) return null;
+  if (business.some(function(label) { return !header.includes(label) || field(label) !== ''; }) || !/^[A-D]$/u.test(workspaceId) || !validRange_(start, end)) return null;
   // Slots have no project identity, business text or allocation units. Source
   // notes and all other fields remain server-side rather than becoming details.
   return { workspaceId: workspaceId, start: start, end: end };
