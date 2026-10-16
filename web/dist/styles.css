@@ -334,9 +334,9 @@ html .stack-top .project-glass-surface { background-color:#2c2c2c; }
   border:1px solid #666;
   border-radius:inherit; background:#252525; box-shadow:0 3px 6px #0003; pointer-events:none;
 }
-.stack-collapse-track { position:absolute; height:44px; pointer-events:none; }
+.stack-collapse-track { position:absolute; display:flex; justify-content:flex-end; height:44px; pointer-events:none; }
 .stack-collapse {
-  position:sticky; left:0; z-index:4; display:grid; place-items:center; width:44px; height:44px; min-width:0; padding:0;
+  position:sticky; right:0; flex:none; z-index:4; display:grid; place-items:center; width:44px; height:44px; min-width:0; padding:0;
   border:1px solid #6b6b6b; border-radius:50%; background:#2b2b2b; color:#f7f7f7;
   cursor:pointer; pointer-events:auto;
 }

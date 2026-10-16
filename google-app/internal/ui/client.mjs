@@ -195,12 +195,11 @@ function renderScheduleTimeline(preserveScroll = false) {
       canvas.append(members); stackMembers.set(stack.key, members);
       if (!stack.expanded) continue;
       {
-        const left = Math.min(...stack.representatives.map((anchor) => anchor.left));
-        const right = Math.max(...stack.representatives.map((anchor) => anchor.left + anchor.width));
         const track = scheduleNode('div', 'stack-collapse-track');
-        track.style.left = left + 'px'; track.style.top = stack.top + 'px'; track.style.width = Math.max(44, right - left) + 'px';
+        track.style.left = stack.collapseTrackLeft + 'px'; track.style.top = stack.collapseTop + 'px'; track.style.width = stack.collapseTrackWidth + 'px';
         const collapse = scheduleNode('button', 'project-stack-toggle stack-collapse');
         collapse.setAttribute('type', 'button');
+        collapse.setAttribute('data-stack-placement', 'bottom-right');
         collapse.setAttribute('data-stack-key', stack.key);
         collapse.setAttribute('data-stack-phase', 'all');
         collapse.setAttribute('aria-expanded', 'true');

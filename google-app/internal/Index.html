@@ -342,9 +342,9 @@ html .stack-top .project-glass-surface { background-color:#2c2c2c; }
   border:1px solid #666;
   border-radius:inherit; background:#252525; box-shadow:0 3px 6px #0003; pointer-events:none;
 }
-.stack-collapse-track { position:absolute; height:44px; pointer-events:none; }
+.stack-collapse-track { position:absolute; display:flex; justify-content:flex-end; height:44px; pointer-events:none; }
 .stack-collapse {
-  position:sticky; left:0; z-index:4; display:grid; place-items:center; width:44px; height:44px; min-width:0; padding:0;
+  position:sticky; right:0; flex:none; z-index:4; display:grid; place-items:center; width:44px; height:44px; min-width:0; padding:0;
   border:1px solid #6b6b6b; border-radius:50%; background:#2b2b2b; color:#f7f7f7;
   cursor:pointer; pointer-events:auto;
 }
@@ -648,16 +648,17 @@ function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = 
         }
         collapsedLaneCount = bandEnds.length * laneSpan;
       }
-      // Expanded stacks reserve a full lane for their controls. Tracking lines
+      // Expanded stacks reserve a bottom lane for their control. Tracking lines
       // always retain individual anchors, including when their work is hidden.
-      let laneCount = stack.expanded ? 1 : collapsedLaneCount;
+      let laneCount = stack.expanded ? 0 : collapsedLaneCount;
       const offsets = members.map((member, index) => {
         if (!stack.expanded && (index === 0 || !member.followUp)) return 0;
         const offset = laneCount;
         laneCount += member.laneCount;
         return offset;
       });
-      return [{ members, first: Math.min(...members.map((member) => member.first)), last: Math.max(...members.map((member) => member.last)), laneCount, offsets, phaseOffsets, stack }];
+      const controlLane = stack.expanded ? laneCount++ : null;
+      return [{ members, first: Math.min(...members.map((member) => member.first)), last: Math.max(...members.map((member) => member.last)), laneCount, offsets, phaseOffsets, controlLane, stack }];
     });
     const laneEnds = [];
     for (const unit of units) {
@@ -668,11 +669,18 @@ function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = 
       if (unit.stack) {
         // Controls and diagonal back cards may extend beyond a short phase.
         // Reserve that display space without enlarging the real date interval.
-        for (const phase of unit.members[0].phases.filter((item) => item.last >= firstDay && item.first <= lastDay)) {
+        const visibleBoxes = unit.members[0].phases.filter((item) => item.last >= firstDay && item.first <= lastDay).map((phase) => {
           const visibleFirst = Math.max(firstDay, phase.first);
           const width = (Math.min(lastDay, phase.last) - visibleFirst + 1) * dayWidth - 2 * inset;
-          const displayWidth = unit.stack.expanded ? Math.max(44, width) : width + unit.stack.decorationOffsetPx;
-          reservedEnd = Math.max(reservedEnd, visibleFirst + displayWidth / dayWidth);
+          if (!unit.stack.expanded) reservedEnd = Math.max(reservedEnd, visibleFirst + (width + unit.stack.decorationOffsetPx) / dayWidth);
+          return { left: (visibleFirst - firstDay) * dayWidth + inset, width };
+        });
+        if (unit.stack.expanded) {
+          const stack = unit.stack;
+          stack.collapseTrackLeft = Math.min(...visibleBoxes.map((box) => box.left));
+          stack.collapseTrackWidth = Math.max(44, Math.max(...visibleBoxes.map((box) => box.left + box.width)) - stack.collapseTrackLeft);
+          stack.collapseTrackRight = stack.collapseTrackLeft + stack.collapseTrackWidth;
+          reservedEnd = Math.max(reservedEnd, firstDay + (stack.collapseTrackRight - inset) / dayWidth);
         }
       }
       for (let offset = 0; offset < unit.laneCount; offset++) laneEnds[lane + offset] = reservedEnd;
@@ -710,7 +718,8 @@ function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, days = 
         stack.representative = stack.representatives[0];
         stack.left = stack.representative.left;
         stack.width = stack.representative.width;
-        stack.top = stack.expanded ? top + 11 + lane * TIMELINE_LANE_HEIGHT : stack.representative.top;
+        stack.top = stack.expanded ? Math.min(...stack.blocks.map((block) => block.top)) : stack.representative.top;
+        if (stack.expanded) stack.collapseTop = top + 11 + (lane + unit.controlLane) * TIMELINE_LANE_HEIGHT;
         stacks.push(stack);
       }
     }
@@ -1549,12 +1558,11 @@ function renderScheduleTimeline(preserveScroll = false) {
       canvas.append(members); stackMembers.set(stack.key, members);
       if (!stack.expanded) continue;
       {
-        const left = Math.min(...stack.representatives.map((anchor) => anchor.left));
-        const right = Math.max(...stack.representatives.map((anchor) => anchor.left + anchor.width));
         const track = scheduleNode('div', 'stack-collapse-track');
-        track.style.left = left + 'px'; track.style.top = stack.top + 'px'; track.style.width = Math.max(44, right - left) + 'px';
+        track.style.left = stack.collapseTrackLeft + 'px'; track.style.top = stack.collapseTop + 'px'; track.style.width = stack.collapseTrackWidth + 'px';
         const collapse = scheduleNode('button', 'project-stack-toggle stack-collapse');
         collapse.setAttribute('type', 'button');
+        collapse.setAttribute('data-stack-placement', 'bottom-right');
         collapse.setAttribute('data-stack-key', stack.key);
         collapse.setAttribute('data-stack-phase', 'all');
         collapse.setAttribute('aria-expanded', 'true');

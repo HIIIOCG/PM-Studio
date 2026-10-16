@@ -322,13 +322,32 @@ test('both Pages variants fail generically, reject the other field contract, and
   }
 });
 
-function assertIconOnlyStackCollapse(button, html) {
+function assertIconOnlyStackCollapse(button, html, page) {
   assert.equal(button.textContent.trim(), '', 'collapse uses an icon without a visible label or count');
   assert.equal(button.querySelectorAll('svg').length, 1);
   assert.equal(button.querySelector('svg').getAttribute('aria-hidden'), 'true');
   const css = /\.stack-collapse\s*\{([^}]*)\}/.exec(html)?.[1] || '';
   assert.match(css, /(?:^|;)\s*width:\s*44px\s*;/);
   assert.match(css, /(?:^|;)\s*height:\s*44px\s*;/);
+  assert.equal(button.getAttribute('data-stack-placement'), 'bottom-right');
+  assert.match(css, /(?:^|;)\s*position:\s*sticky\s*;/);
+  assert.match(css, /(?:^|;)\s*right:\s*0\s*;/);
+  assert.doesNotMatch(css, /(?:^|;)\s*left:\s*0\s*;/);
+  const trackCss = /\.stack-collapse-track\s*\{([^}]*)\}/.exec(html)?.[1] || '';
+  assert.match(trackCss, /(?:^|;)\s*display:\s*flex\s*;/);
+  assert.match(trackCss, /(?:^|;)\s*justify-content:\s*flex-end\s*;/);
+  const members = page.document.getElementById(button.getAttribute('aria-controls')).querySelectorAll('.project-card');
+  assert.ok(members.length >= 2);
+  const track = page.get('timeline-canvas').querySelectorAll('.stack-collapse-track').find((node) => node.children.includes(button));
+  assert.ok(track);
+  const cardHeight = Number(/\.project-card\s*\{[^}]*\bheight:\s*([0-9.]+)px/.exec(html)?.[1]);
+  assert.ok(cardHeight > 0);
+  const left = Math.min(...members.map((card) => parseFloat(card.style.left)));
+  const right = Math.max(...members.map((card) => parseFloat(card.style.left) + parseFloat(card.style.width)));
+  const bottom = Math.max(...members.map((card) => parseFloat(card.style.top) + cardHeight));
+  assert.ok(parseFloat(track.style.top) >= bottom, 'the collapse lane sits below every group member');
+  assert.ok(Math.abs(parseFloat(track.style.left) - left) < 1e-7);
+  assert.ok(parseFloat(track.style.left) + parseFloat(track.style.width) >= right - 1e-7, 'the control track reaches the group right edge');
 }
 
 test('both Pages views unfold D stacks before opening individual authorized details and keep single D cases directly actionable', async () => {
@@ -360,7 +379,7 @@ test('both Pages views unfold D stacks before opening individual authorized deta
     await toggles()[0].click();
     assert.equal(page.document.getElementById('project-details')?.open ?? false, false);
     assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
-    assertIconOnlyStackCollapse(toggles()[0], html);
+    assertIconOnlyStackCollapse(toggles()[0], html, page);
     for (const project of source.projects.slice(0, 2)) {
       const card = cards().find((item) => item.getAttribute('data-project-id') === project.id);
       assert.ok(card, project.id);
@@ -380,9 +399,10 @@ test('both Pages views unfold D stacks before opening individual authorized deta
     await page.click('language-toggle');
     assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
     assert.equal(toggles()[0].getAttribute('aria-label'), 'Collapse 2 projects');
-    assertIconOnlyStackCollapse(toggles()[0], html);
+    assertIconOnlyStackCollapse(toggles()[0], html, page);
     page.resize(900);
     assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
+    assertIconOnlyStackCollapse(toggles()[0], html, page);
     await toggles()[0].click();
     assert.equal(toggles()[0].getAttribute('aria-expanded'), 'false');
     assert.match(toggles()[0].getAttribute('aria-label'), /^Expand 2 projects(?: ·|$)/);
@@ -438,7 +458,7 @@ test('both Pages views show one rear layer per extra D project and a single icon
     assert.equal(page.document.getElementById('project-details')?.open ?? false, false);
     assert.equal(toggles().length, 1, 'all phases share one expanded collapse control');
     const collapse = toggles()[0];
-    assertIconOnlyStackCollapse(collapse, html);
+    assertIconOnlyStackCollapse(collapse, html, page);
     assert.equal(collapse.getAttribute('aria-label'), '收合 ' + count + ' 個專案');
     assert.equal(collapse.getAttribute('aria-expanded'), 'true');
     assert.equal(page.document.activeElement, collapse, 'first expansion focuses its unique icon control');
@@ -446,11 +466,11 @@ test('both Pages views show one rear layer per extra D project and a single icon
     assert.equal(canvas.querySelectorAll('.project-card').length, count * (multiPhase ? 2 : 1));
     await page.click('language-toggle');
     assert.equal(toggles().length, 1);
-    assertIconOnlyStackCollapse(toggles()[0], html);
+    assertIconOnlyStackCollapse(toggles()[0], html, page);
     assert.equal(toggles()[0].getAttribute('aria-label'), 'Collapse ' + count + ' projects');
     page.resize(212);
     assert.equal(toggles().length, 1);
-    assertIconOnlyStackCollapse(toggles()[0], html);
+    assertIconOnlyStackCollapse(toggles()[0], html, page);
     await toggles()[0].click();
     assert.equal(toggles().length, multiPhase ? 2 : 1);
     toggles().forEach(validateLayers);

@@ -363,13 +363,32 @@ function installStackFocusTracking(page) {
   page.document.querySelectorAll('button').forEach(addFocus);
 }
 
-function assertIconOnlyStackCollapse(button, html) {
+function assertIconOnlyStackCollapse(button, html, page) {
   assert.equal(button.textContent.trim(), '', 'collapse uses an icon without a visible label or count');
   assert.equal(button.querySelectorAll('svg').length, 1);
   assert.equal(button.querySelector('svg').getAttribute('aria-hidden'), 'true');
   const css = /\.stack-collapse\s*\{([^}]*)\}/.exec(html)?.[1] || '';
   assert.match(css, /(?:^|;)\s*width:\s*44px\s*;/);
   assert.match(css, /(?:^|;)\s*height:\s*44px\s*;/);
+  assert.equal(button.getAttribute('data-stack-placement'), 'bottom-right');
+  assert.match(css, /(?:^|;)\s*position:\s*sticky\s*;/);
+  assert.match(css, /(?:^|;)\s*right:\s*0\s*;/);
+  assert.doesNotMatch(css, /(?:^|;)\s*left:\s*0\s*;/);
+  const trackCss = /\.stack-collapse-track\s*\{([^}]*)\}/.exec(html)?.[1] || '';
+  assert.match(trackCss, /(?:^|;)\s*display:\s*flex\s*;/);
+  assert.match(trackCss, /(?:^|;)\s*justify-content:\s*flex-end\s*;/);
+  const members = page.document.getElementById(button.getAttribute('aria-controls')).querySelectorAll('.project-card');
+  assert.ok(members.length >= 2);
+  const track = page.get('timeline-canvas').querySelectorAll('.stack-collapse-track').find((node) => node.children.includes(button));
+  assert.ok(track);
+  const cardHeight = Number(/\.project-card\s*\{[^}]*\bheight:\s*([0-9.]+)px/.exec(html)?.[1]);
+  assert.ok(cardHeight > 0);
+  const left = Math.min(...members.map((card) => parseFloat(card.style.left)));
+  const right = Math.max(...members.map((card) => parseFloat(card.style.left) + parseFloat(card.style.width)));
+  const bottom = Math.max(...members.map((card) => parseFloat(card.style.top) + cardHeight));
+  assert.ok(parseFloat(track.style.top) >= bottom, 'the collapse lane sits below every group member');
+  assert.ok(Math.abs(parseFloat(track.style.left) - left) < 1e-7);
+  assert.ok(parseFloat(track.style.left) + parseFloat(track.style.width) >= right - 1e-7, 'the control track reaches the group right edge');
 }
 
 test('D stack expansion preserves language, scroll, resize and navigation state without storing it or folding other workspaces', async(t) => {
@@ -406,7 +425,7 @@ test('D stack expansion preserves language, scroll, resize and navigation state 
   assert.equal(page.document.getElementById('project-details')?.open ?? false, false, 'the first activation only unfolds the stack');
   assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
   assert.equal(toggles()[0].getAttribute('aria-label'), '收合 2 個專案');
-  assertIconOnlyStackCollapse(toggles()[0], html);
+  assertIconOnlyStackCollapse(toggles()[0], html, page);
   assert.equal(normalCards().filter((card) => ['O-971', 'O-972'].includes(card.getAttribute('data-project-id'))).length, 2);
   assert.equal(page.get('visible-count').textContent, visibleCount);
   const viewport = page.get('timeline-viewport');
@@ -416,12 +435,13 @@ test('D stack expansion preserves language, scroll, resize and navigation state 
   await page.click('language-toggle');
   assert.equal(viewport.scrollLeft, 24);
   assert.equal(toggles()[0].getAttribute('aria-label'), 'Collapse 2 projects');
-  assertIconOnlyStackCollapse(toggles()[0], html);
+  assertIconOnlyStackCollapse(toggles()[0], html, page);
   assert.equal(toggles()[0].getAttribute('data-stack-key'), stackKey);
   assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
   page.resize(212);
   assert.equal(page.get('date-range').textContent.split(' — ')[0], leftDate);
   assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');
+  assertIconOnlyStackCollapse(toggles()[0], html, page);
   await page.click('next');
   await page.click('previous');
   assert.equal(toggles()[0].getAttribute('aria-expanded'), 'true');

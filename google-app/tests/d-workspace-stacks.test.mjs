@@ -16,6 +16,12 @@ function dRow(projects, changes = {}, first = firstDay) {
 function phaseGeometry(block) {
   return [block.project.id, block.phase, block.start, block.end, block.startPrecision, block.endPrecision, block.first, block.last, block.left, block.width];
 }
+function collapseBox(stack) {
+  return { left: stack.collapseTrackRight - 44, right: stack.collapseTrackRight, top: stack.collapseTop, bottom: stack.collapseTop + 44 };
+}
+function overlaps(first, second) {
+  return first.left < second.right && second.left < first.right && first.top < second.bottom && second.top < first.bottom;
+}
 function freeze(value) {
   if (value && typeof value === 'object') { Object.freeze(value); Object.values(value).forEach(freeze); }
   return value;
@@ -42,7 +48,7 @@ test('D exact footprints collapse by unique project while retaining all original
   assert.equal(dRow([project('O-100', { workspaceUnits: { D: 9 } })]).stacks.length, 0);
 });
 
-test('expanding one stack reserves a header and preserves per-project date geometry and other collapsed groups', () => {
+test('expanded members start without a header gap and have a dedicated bottom control', () => {
   const projects = [project('O-101'), project('O-102'), project('O-103', { start: '2026-11', end: '2026-11-30' }), project('O-104', { start: '2026-11', end: '2026-11-30' })];
   const collapsed = dRow(projects);
   const key = collapsed.stacks[0].key;
@@ -52,7 +58,10 @@ test('expanding one stack reserves a header and preserves per-project date geome
   assert.equal(stack.expanded, true);
   assert.ok(stack.blocks.every((block) => !block.stackHidden));
   assert.equal(new Set(stack.blocks.map((block) => block.lane)).size, 2);
-  assert.equal(Math.min(...stack.blocks.map((block) => block.top)) - stack.top, 70);
+  assert.equal(Math.min(...stack.blocks.map((block) => block.top)), collapsed.stacks[0].representative.top);
+  assert.equal(stack.top, Math.min(...stack.blocks.map((block) => block.top)));
+  assert.ok(stack.collapseTop >= Math.max(...stack.blocks.map((block) => block.top + 48)) + 22);
+  assert.ok(stack.collapseTop + 44 <= expanded.top + expanded.height);
   assert.equal(expanded.stacks[1].expanded, false);
   assert.equal(expanded.stacks[1].blocks.filter((block) => !block.stackHidden).length, 1);
   assert.ok(expanded.height > collapsed.height);
@@ -160,7 +169,7 @@ test('D stacks leave A/B/C rows byte-identical, including a project assigned to 
   assert.ok(collapsed.rows[0].blocks.every((block) => !Object.hasOwn(block, 'stackHidden')));
 });
 
-test('expanded adjacent one-day stacks reserve their actual minimum control width without stretching dates', () => {
+test('adjacent one-day stacks reserve the bottom icon width without stretching dates', () => {
   const projects = ['2026-10-01', '2026-10-02', '2026-10-20'].flatMap((date, index) => [
     project('O-' + (101 + index * 2), { start: date, end: date }),
     project('O-' + (102 + index * 2), { start: date, end: date }),
@@ -174,10 +183,13 @@ test('expanded adjacent one-day stacks reserve their actual minimum control widt
       const row = dRow(projects, { ...scale, expandedStacks: new Set(expandedKeys) });
       assert.deepEqual(row.blocks.map(phaseGeometry), collapsed.blocks.map(phaseGeometry));
       const first = row.stacks[0], next = row.stacks[1];
-      const firstHeaderRight = first.left + Math.max(44, first.width);
-      assert.ok(next.left < firstHeaderRight, 'this fixture would overlap horizontally if the control lane were reused');
-      const nextTop = next.expanded ? next.top : next.representative.top;
-      assert.ok(nextTop >= first.top + 32, 'the next group remains outside the previous collapse control');
+      assert.equal(first.collapseTrackWidth, 44);
+      const control = collapseBox(first);
+      assert.ok(next.left < control.right, 'this fixture would overlap horizontally if the control lane were reused');
+      for (const block of next.blocks.filter((item) => !item.stackHidden)) {
+        assert.equal(overlaps(control, { left: block.left, right: block.left + block.width, top: block.top, bottom: block.top + 48 }), false);
+      }
+      if (next.expanded) assert.equal(overlaps(control, collapseBox(next)), false);
       assert.equal(row.stacks[2].top, row.stacks[0].top, 'later work can reuse the lane after the real control track ends');
       assert.ok(row.blocks.every((block) => block.width < 44), 'the actual one-day bars retain their true short width');
     }
@@ -185,7 +197,7 @@ test('expanded adjacent one-day stacks reserve their actual minimum control widt
   assert.equal(JSON.stringify(projects), original);
 });
 
-test('a correction-only visible stack reserves its short header at the clipped view position', () => {
+test('a correction-only visible stack reserves its bottom control at the clipped work position', () => {
   const historical = { start: '2026-09-01', end: '2026-09-30', correctionStart: '2026-10-01', correctionEnd: '2026-10-01' };
   const projects = [project('O-101', historical), project('O-102', historical), project('O-103', { start: '2026-10-02', end: '2026-10-02' })];
   const collapsed = dRow(projects);
@@ -193,10 +205,38 @@ test('a correction-only visible stack reserves its short header at the clipped v
   const stack = row.stacks[0];
   assert.deepEqual(stack.representatives.map((block) => block.phase), ['correction']);
   assert.equal(stack.left, 1.2);
+  assert.equal(stack.collapseTrackLeft, 1.2);
+  assert.equal(stack.collapseTrackWidth, 44);
   assert.deepEqual(row.blocks.map(phaseGeometry), collapsed.blocks.map(phaseGeometry));
   const next = row.blocks.find((block) => block.project.id === 'O-103');
-  assert.ok(next.left < stack.left + 44);
-  assert.ok(next.top >= stack.top + 32);
+  const control = collapseBox(stack);
+  assert.ok(next.left < control.right);
+  assert.equal(overlaps(control, { left: next.left, right: next.left + next.width, top: next.top, bottom: next.top + 48 }), false);
+});
+
+test('one bottom control spans the work footprint, excludes waiting, and clears every member and tracking endpoint', () => {
+  const projects = [project('O-101', { start: '2026-10-01', end: '2026-10-03', correctionStart: '2026-10-05', correctionEnd: '2026-10-06', followUp: ['payment'] }),
+    project('O-102', { start: '2026-10-01', end: '2026-10-03', correctionStart: '2026-10-05', correctionEnd: '2026-10-06', followUp: ['customer-confirmation'] })];
+  const original = JSON.stringify(projects);
+  const collapsed = dRow(projects);
+  const row = dRow(projects, { expandedStacks: new Set([collapsed.stacks[0].key]) });
+  const stack = row.stacks[0], control = collapseBox(stack);
+  assert.equal(row.stacks.length, 1);
+  assert.deepEqual(stack.representatives.map((block) => block.phase), ['production', 'correction']);
+  assert.equal(stack.top, collapsed.stacks[0].representative.top);
+  assert.equal(stack.collapseTrackLeft, Math.min(...stack.blocks.map((block) => block.left)));
+  assert.ok(Math.abs(stack.collapseTrackRight - Math.max(...stack.blocks.map((block) => block.left + block.width))) < 1e-9);
+  assert.ok(row.followUps.every((item) => item.left + item.width > stack.collapseTrackRight));
+  for (const block of row.blocks) {
+    assert.equal(overlaps(control, { left: block.left, right: block.left + block.width, top: block.top, bottom: block.top + 48 }), false);
+  }
+  for (const followUp of row.followUps) {
+    assert.ok(stack.collapseTop >= followUp.top + 22);
+    assert.equal(overlaps(control, { left: followUp.left + followUp.width - 22, right: followUp.left + followUp.width + 22, top: followUp.top - 22, bottom: followUp.top + 22 }), false);
+  }
+  assert.ok(control.bottom <= row.top + row.height);
+  assert.deepEqual(row.blocks.map(phaseGeometry), collapsed.blocks.map(phaseGeometry));
+  assert.equal(JSON.stringify(projects), original);
 });
 
 test('every collapsed case has one visible card layer and large diagonal stacks remain inside the row', () => {

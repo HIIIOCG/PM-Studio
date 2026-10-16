@@ -129,16 +129,17 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
         }
         collapsedLaneCount = bandEnds.length * laneSpan;
       }
-      // Expanded stacks reserve a full lane for their controls. Tracking lines
+      // Expanded stacks reserve a bottom lane for their control. Tracking lines
       // always retain individual anchors, including when their work is hidden.
-      let laneCount = stack.expanded ? 1 : collapsedLaneCount;
+      let laneCount = stack.expanded ? 0 : collapsedLaneCount;
       const offsets = members.map((member, index) => {
         if (!stack.expanded && (index === 0 || !member.followUp)) return 0;
         const offset = laneCount;
         laneCount += member.laneCount;
         return offset;
       });
-      return [{ members, first: Math.min(...members.map((member) => member.first)), last: Math.max(...members.map((member) => member.last)), laneCount, offsets, phaseOffsets, stack }];
+      const controlLane = stack.expanded ? laneCount++ : null;
+      return [{ members, first: Math.min(...members.map((member) => member.first)), last: Math.max(...members.map((member) => member.last)), laneCount, offsets, phaseOffsets, controlLane, stack }];
     });
     const laneEnds = [];
     for (const unit of units) {
@@ -149,11 +150,18 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
       if (unit.stack) {
         // Controls and diagonal back cards may extend beyond a short phase.
         // Reserve that display space without enlarging the real date interval.
-        for (const phase of unit.members[0].phases.filter((item) => item.last >= firstDay && item.first <= lastDay)) {
+        const visibleBoxes = unit.members[0].phases.filter((item) => item.last >= firstDay && item.first <= lastDay).map((phase) => {
           const visibleFirst = Math.max(firstDay, phase.first);
           const width = (Math.min(lastDay, phase.last) - visibleFirst + 1) * dayWidth - 2 * inset;
-          const displayWidth = unit.stack.expanded ? Math.max(44, width) : width + unit.stack.decorationOffsetPx;
-          reservedEnd = Math.max(reservedEnd, visibleFirst + displayWidth / dayWidth);
+          if (!unit.stack.expanded) reservedEnd = Math.max(reservedEnd, visibleFirst + (width + unit.stack.decorationOffsetPx) / dayWidth);
+          return { left: (visibleFirst - firstDay) * dayWidth + inset, width };
+        });
+        if (unit.stack.expanded) {
+          const stack = unit.stack;
+          stack.collapseTrackLeft = Math.min(...visibleBoxes.map((box) => box.left));
+          stack.collapseTrackWidth = Math.max(44, Math.max(...visibleBoxes.map((box) => box.left + box.width)) - stack.collapseTrackLeft);
+          stack.collapseTrackRight = stack.collapseTrackLeft + stack.collapseTrackWidth;
+          reservedEnd = Math.max(reservedEnd, firstDay + (stack.collapseTrackRight - inset) / dayWidth);
         }
       }
       for (let offset = 0; offset < unit.laneCount; offset++) laneEnds[lane + offset] = reservedEnd;
@@ -191,7 +199,8 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
         stack.representative = stack.representatives[0];
         stack.left = stack.representative.left;
         stack.width = stack.representative.width;
-        stack.top = stack.expanded ? top + 11 + lane * TIMELINE_LANE_HEIGHT : stack.representative.top;
+        stack.top = stack.expanded ? Math.min(...stack.blocks.map((block) => block.top)) : stack.representative.top;
+        if (stack.expanded) stack.collapseTop = top + 11 + (lane + unit.controlLane) * TIMELINE_LANE_HEIGHT;
         stacks.push(stack);
       }
     }
