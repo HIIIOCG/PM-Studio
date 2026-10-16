@@ -14,7 +14,7 @@ function dRow(projects, changes = {}, first = firstDay) {
   return buildTimelineLayout(projects, workspaces, first, { ...options, ...changes }).rows[3];
 }
 function phaseGeometry(block) {
-  return [block.project.id, block.phase, block.start, block.end, block.startPrecision, block.endPrecision, block.first, block.last, block.left, block.width];
+  return [block.project.id, block.phase, block.start, block.end, block.startPrecision, block.endPrecision, block.first, block.last, block.dateLeft ?? block.left, block.dateWidth ?? block.width];
 }
 function collapseBox(stack) {
   return { left: stack.collapseTrackRight - 44, right: stack.collapseTrackRight, top: stack.collapseTop, bottom: stack.collapseTop + 44 };
@@ -40,7 +40,7 @@ test('D exact footprints collapse by unique project while retaining all original
   assert.equal(row.blocks.filter((block) => !block.stackHidden).length, 1);
   assert.equal(stack.representative.project.id, 'O-101');
   assert.strictEqual(stack.representatives[0], stack.representative);
-  assert.ok(row.blocks.every((block) => block.width === 31 * 10 - 2.4 && block.stackKey === stack.key));
+  assert.ok(row.blocks.every((block) => block.dateWidth === 31 * 10 - 2.4 && block.width + block.visualInsetPx === block.dateWidth && block.stackKey === stack.key));
   assert.equal(row.height, 88);
   assert.equal(stack.left, stack.representative.left);
   assert.equal(stack.width, stack.representative.width);
@@ -122,7 +122,7 @@ test('every tracking line keeps its own project, anchor lane, and clickable endp
       assert.equal(Object.hasOwn(followUp, 'stackHidden'), false);
       const anchor = row.blocks.find((block) => block.project.id === followUp.project.id && block.phase === followUp.anchor.phase);
       assert.equal(followUp.top, anchor.top + 24);
-      assert.equal(followUp.left, anchor.left + anchor.width);
+      assert.equal(followUp.left, (anchor.dateLeft ?? anchor.left) + (anchor.dateWidth ?? anchor.width));
       assert.ok(followUp.top + 22 <= row.top + row.height);
     }
   }
@@ -295,4 +295,101 @@ test('diagonal decoration separates adjacent production and correction phases wh
   const expanded = dRow(projects, { expandedStacks: new Set([stack.key]) });
   assert.deepEqual(expanded.blocks.map(phaseGeometry), row.blocks.map(phaseGeometry));
   assert.deepEqual(expanded.followUps.map((item) => [item.project.id, item.first, item.last, item.left, item.width]), row.followUps.map((item) => [item.project.id, item.first, item.last, item.left, item.width]));
+});
+
+test('adjacent July, August and September stacks share one lane at narrow and wide scales with their complete silhouettes inside the real months', () => {
+  const months = [['2026-07', '2026-07-31'], ['2026-08', '2026-08-31'], ['2026-09', '2026-09-30']];
+  const projects = freeze(months.flatMap(([start, end], index) => [project('O-' + (101 + index * 2), { start, end }), project('O-' + (102 + index * 2), { start, end })]));
+  const original = JSON.stringify(projects);
+  for (const viewportWidth of [212, 350, 560, 900, 1428]) {
+    const scale = timelineScale(viewportWidth);
+    const row = dRow(projects, { ...scale, days: 120 }, timelineDay('2026-07-01'));
+    assert.equal(row.stacks.length, 3);
+    assert.equal(new Set(row.stacks.map((stack) => stack.representative.lane)).size, 1);
+    assert.equal(row.height, 88);
+    for (const [index, stack] of row.stacks.entries()) {
+      const block = stack.representative;
+      assert.equal(stack.count, 2);
+      assert.equal(block.visualInsetPx, 6);
+      assert.equal(block.left, block.dateLeft);
+      assert.equal(block.width + block.visualInsetPx, block.dateWidth);
+      assert.ok(Math.abs(block.left + block.width + stack.decorationOffsetPx - block.dateLeft - block.dateWidth) < 1e-9);
+      assert.equal(block.start, months[index][0]);
+      assert.equal(block.startPrecision, 'month');
+      assert.equal(block.end, months[index][1]);
+      if (index) {
+        const previous = row.stacks[index - 1];
+        assert.ok(previous.representative.left + previous.representative.width + previous.decorationOffsetPx <= block.left);
+      }
+    }
+    const expanded = dRow(projects, { ...scale, days: 120, expandedStacks: new Set(row.stacks.map((stack) => stack.key)) }, timelineDay('2026-07-01'));
+    assert.deepEqual(expanded.blocks.map(phaseGeometry), row.blocks.map(phaseGeometry));
+    assert.ok(expanded.blocks.every((block) => block.width === block.dateWidth && !Object.hasOwn(block, 'visualInsetPx')));
+  }
+  assert.equal(JSON.stringify(projects), original);
+});
+
+test('visual compaction never puts genuinely overlapping project periods in the same lane', () => {
+  const projects = [project('O-101'), project('O-102'),
+    project('O-103', { start: '2026-10-20', end: '2026-11-20' }), project('O-104', { start: '2026-10-20', end: '2026-11-20' })];
+  for (const viewportWidth of [212, 900]) {
+    const row = dRow(projects, timelineScale(viewportWidth));
+    assert.equal(row.stacks.length, 2);
+    assert.notEqual(row.stacks[0].representative.lane, row.stacks[1].representative.lane);
+    assert.ok(row.stacks.every((stack) => stack.representative.visualInsetPx === 6));
+  }
+});
+
+test('each long production and correction phase compacts separately, preserves the gap, and keeps waiting at the true end', () => {
+  const projects = Array.from({ length: 3 }, (_, index) => project('O-' + (101 + index), {
+    start: '2026-07', end: '2026-07-31', correctionStart: '2026-08-02', correctionEnd: '2026-08-31', followUp: index < 2 ? ['payment'] : [],
+  }));
+  const first = timelineDay('2026-07-01');
+  for (const viewportWidth of [212, 900]) {
+    const changes = { ...timelineScale(viewportWidth), days: 120, today: timelineDay('2026-09-05') };
+    const row = dRow(projects, changes, first);
+    const stack = row.stacks[0], [production, correction] = stack.representatives;
+    assert.equal(stack.representatives.length, 2);
+    assert.equal(production.lane, correction.lane);
+    assert.equal(production.visualInsetPx, 12);
+    assert.equal(correction.visualInsetPx, 12);
+    assert.ok(production.left + production.width + stack.decorationOffsetPx < correction.left, 'the real phase gap stays empty');
+    assert.equal(row.followUps.length, 2);
+    assert.equal(new Set(row.followUps.map((item) => item.lane)).size, 2);
+    for (const followUp of row.followUps) {
+      const anchor = row.blocks.find((block) => block.project.id === followUp.project.id && block.phase === 'correction');
+      assert.equal(followUp.first, timelineDay('2026-09-01'));
+      assert.ok(Math.abs(followUp.left - anchor.dateLeft - anchor.dateWidth) < 1e-9);
+      assert.ok(followUp.left > anchor.left + anchor.width, 'waiting does not start at the shortened front card');
+      assert.equal(followUp.top, anchor.top + 24);
+    }
+    const expanded = dRow(projects, { ...changes, expandedStacks: new Set([stack.key]) }, first);
+    assert.deepEqual(expanded.blocks.map(phaseGeometry), row.blocks.map(phaseGeometry));
+    assert.deepEqual(expanded.followUps.map((item) => [item.project.id, item.first, item.last, item.left, item.width]), row.followUps.map((item) => [item.project.id, item.first, item.last, item.left, item.width]));
+  }
+});
+
+test('short cases inset only their available visual space and reserve remaining decoration instead of producing zero or negative bars', () => {
+  for (const days of [1, 5, 10]) {
+    const end = '2026-10-' + String(days).padStart(2, '0');
+    const nextDay = '2026-10-' + String(days + 1).padStart(2, '0');
+    const projects = Array.from({ length: 8 }, (_, index) => project('O-' + (101 + index), { start: '2026-10-01', end }));
+    projects.push(project('O-109', { start: nextDay, end: nextDay }));
+    const row = dRow(projects);
+    const stack = row.stacks[0], block = stack.representative;
+    const expectedWidth = days * options.dayWidth - 2.4;
+    const expectedInset = Math.min(stack.decorationOffsetPx, Math.max(0, expectedWidth - 44));
+    assert.equal(block.dateWidth, expectedWidth);
+    assert.equal(block.visualInsetPx, expectedInset);
+    assert.equal(block.width, expectedWidth - expectedInset);
+    assert.ok(block.width >= Math.min(44, expectedWidth));
+    const next = row.blocks.find((item) => item.project.id === 'O-109');
+    if (expectedInset === stack.decorationOffsetPx) {
+      assert.equal(block.lane, next.lane);
+      assert.ok(block.left + block.width + stack.decorationOffsetPx <= next.left);
+    } else {
+      assert.ok(next.top >= block.top + 48 + stack.decorationOffsetPx + 4);
+    }
+    assert.equal(Object.hasOwn(next, 'dateWidth'), false, 'single D cases retain their original shape');
+  }
 });

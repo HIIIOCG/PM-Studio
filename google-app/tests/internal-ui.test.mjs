@@ -481,3 +481,64 @@ test('both Pages views show one rear layer per extra D project and a single icon
     assertAnonymousRequest(page.calls[0], url);
   }
 });
+
+test('both Pages views compact adjacent D months visually and restore every expanded date width without changing source precision', async () => {
+  for (const teamspace of [false, true]) {
+    const source = teamspace ? sample() : createPreviewPayload(new Date('2026-12-21T04:00:00Z'));
+    const base = { ...source.projects[0], correctionStart: '', correctionEnd: '', pendingReasons: [], followUp: [] };
+    const periods = [['2026-12', '2026-12-31'], ['2027-01', '2027-01-31'], ['2027-02', '2027-02-28']];
+    const project = (id, period, workspace) => ({ ...base, id, start: period[0], end: period[1], workspaceIds: [workspace], workspaceUnits: { [workspace]: 1 },
+      ...(teamspace ? { name: '虛構月份專案 ' + id, customer: '虛構客戶' } : {}) });
+    source.projects = periods.flatMap((period, index) => [
+      project('C-' + (951 + index), period, 'A'),
+      ...Array.from({ length: index < 2 ? 4 : 1 }, (_, member) => project('O-' + (951 + index * 4 + member), period, 'D')),
+    ]);
+    const original = JSON.stringify(source), url = teamspace ? DIRECT_TEAMSPACE_URL : DIRECT_PUBLIC_URL;
+    const html = await (teamspace ? renderTeamspaceEntry(url) : renderPublicEntry(url));
+    const page = await mount(html, source, { http: true, width: 900 });
+    const addFocus = (node) => { node.focus = () => { page.document.activeElement = node; }; return node; };
+    const createElement = page.document.createElement;
+    page.document.createElement = (...args) => addFocus(createElement(...args));
+    page.document.querySelectorAll('button').forEach(addFocus);
+    const canvas = page.get('timeline-canvas'), cards = () => canvas.querySelectorAll('.project-card');
+    const byId = (id) => cards().find((card) => card.getAttribute('data-project-id') === id);
+    const toggles = () => canvas.querySelectorAll('.project-stack-toggle');
+    assert.equal(toggles().length, 2);
+    assert.equal(parseFloat(toggles()[0].style.top), parseFloat(toggles()[1].style.top), 'adjacent nonoverlapping D months share one lane');
+    const assertCollapsed = (index) => {
+      const card = byId('O-' + (951 + index * 4)), reference = byId('C-' + (951 + index));
+      assert.equal(card.getAttribute('data-start-precision'), 'month');
+      assert.equal(parseFloat(card.style.left), parseFloat(reference.style.left));
+      assert.ok(Math.abs(parseFloat(card.style.width) + 18 - parseFloat(reference.style.width)) < 1e-7);
+      assert.equal(card.querySelectorAll('.stack-layer').length, 3);
+      assert.match(card.getAttribute('aria-label'), new RegExp(periods[index][0] + '.*' + periods[index][1]));
+      return card;
+    };
+    const december = assertCollapsed(0), january = assertCollapsed(1);
+    assert.ok(parseFloat(december.style.left) + parseFloat(december.style.width) + 18 <= parseFloat(january.style.left), 'the complete rear-card silhouette fits before the next month');
+    assert.equal(parseFloat(byId('O-959').style.width), parseFloat(byId('C-953').style.width), 'single D cases retain their original date width');
+    await december.click();
+    assert.equal(page.document.getElementById('project-details')?.open ?? false, false);
+    assert.equal(canvas.querySelectorAll('.stack-collapse').length, 1);
+    const assertExpandedWidths = () => {
+      for (const id of ['O-951', 'O-952', 'O-953', 'O-954']) {
+        const card = byId(id), reference = byId('C-951');
+        assert.equal(card.getAttribute('data-start-precision'), 'month');
+        assert.equal(parseFloat(card.style.left), parseFloat(reference.style.left));
+        assert.equal(parseFloat(card.style.width), parseFloat(reference.style.width));
+        assert.match(card.getAttribute('aria-label'), /2026-12.*2026-12-31/);
+      }
+    };
+    assertExpandedWidths();
+    await page.click('language-toggle');
+    page.resize(700);
+    assertExpandedWidths();
+    assertIconOnlyStackCollapse(canvas.querySelector('.stack-collapse'), html, page);
+    await canvas.querySelector('.stack-collapse').click();
+    assertCollapsed(0); assertCollapsed(1);
+    assert.equal(parseFloat(toggles()[0].style.top), parseFloat(toggles()[1].style.top));
+    assert.equal(JSON.stringify(source), original);
+    assert.equal(page.calls.length, 1);
+    assertAnonymousRequest(page.calls[0], url);
+  }
+});

@@ -419,6 +419,15 @@ test('D stack expansion preserves language, scroll, resize and navigation state 
   assert.equal(page.get('pending-count').textContent, '1');
   for (const id of otherIds) assert.ok(normalCards().some((card) => card.getAttribute('data-project-id') === id), id);
   assert.equal(normalCards().filter((card) => ['O-971', 'O-972'].includes(card.getAttribute('data-project-id'))).length, 0);
+  const referenceCard = () => normalCards().find((card) => card.getAttribute('data-project-id') === 'C-971');
+  const assertCollapsedWidth = () => {
+    const collapsed = toggles()[0], reference = referenceCard();
+    assert.equal(parseFloat(collapsed.style.left), parseFloat(reference.style.left));
+    assert.ok(Math.abs(parseFloat(reference.style.width) - parseFloat(collapsed.style.width) - 6) < 1e-7,
+      'only the collapsed D front card absorbs the one 6px rear-card offset');
+    assert.match(collapsed.getAttribute('aria-label'), /2026-12-20.*2026-12-30/);
+  };
+  assertCollapsedWidth();
   const visibleCount = page.get('visible-count').textContent;
   toggle.focus();
   await toggle.click();
@@ -427,6 +436,10 @@ test('D stack expansion preserves language, scroll, resize and navigation state 
   assert.equal(toggles()[0].getAttribute('aria-label'), '收合 2 個專案');
   assertIconOnlyStackCollapse(toggles()[0], html, page);
   assert.equal(normalCards().filter((card) => ['O-971', 'O-972'].includes(card.getAttribute('data-project-id'))).length, 2);
+  for (const card of normalCards().filter((item) => ['O-971', 'O-972'].includes(item.getAttribute('data-project-id')))) {
+    assert.equal(parseFloat(card.style.width), parseFloat(referenceCard().style.width), 'expanded D cases use their complete original date width');
+    assert.match(card.getAttribute('aria-label'), /2026-12-20.*2026-12-30/);
+  }
   assert.equal(page.get('visible-count').textContent, visibleCount);
   const viewport = page.get('timeline-viewport');
   viewport.scrollLeft = 24;
@@ -452,6 +465,7 @@ test('D stack expansion preserves language, scroll, resize and navigation state 
   assert.equal(toggle.getAttribute('aria-expanded'), 'false');
   assert.match(toggle.getAttribute('aria-label'), /^Expand 2 projects(?: ·|$)/);
   assert.equal(page.document.activeElement, toggle, 'collapsing restores focus to the replacement stack button');
+  assertCollapsedWidth();
   assert.equal(page.document.getElementById('project-details')?.open ?? false, false);
   assert.equal(page.get('pending-count').textContent, pendingCount);
   for (const id of otherIds) assert.ok(normalCards().some((card) => card.getAttribute('data-project-id') === id), id);

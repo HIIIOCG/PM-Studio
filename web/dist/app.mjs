@@ -70,6 +70,7 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
   let top = TIMELINE_AXIS_HEIGHT;
   const lastDay = firstDay + days - 1;
   const inset = Math.min(2, dayWidth * .12);
+  const stackVisualInset = (width, decoration) => Math.min(decoration, Math.max(0, width - 44));
   const rows = workspaces.map((workspace) => {
     const groups = projects.filter((project) => project.workspaceIds.includes(workspace.id)).map((project) => {
       const phases = projectPhases(project).map((phase) => ({ ...phase, project }));
@@ -124,7 +125,10 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
         for (const phase of [...members[0].phases].sort((a, b) => a.first - b.first || a.last - b.last)) {
           let band = bandEnds.findIndex((end) => end < phase.first);
           if (band < 0) band = bandEnds.length;
-          bandEnds[band] = phase.last + 1 + (stack.decorationOffsetPx - 2 * inset) / dayWidth;
+          const visible = phase.last >= firstDay && phase.first <= lastDay;
+          const width = (visible ? Math.min(lastDay, phase.last) - Math.max(firstDay, phase.first) + 1 : phase.last - phase.first + 1) * dayWidth - 2 * inset;
+          const overflow = stack.decorationOffsetPx - stackVisualInset(width, stack.decorationOffsetPx);
+          bandEnds[band] = phase.last + 1 + (overflow - 2 * inset) / dayWidth;
           phaseOffsets.set(phase.phase, band * laneSpan);
         }
         collapsedLaneCount = bandEnds.length * laneSpan;
@@ -153,7 +157,10 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
         const visibleBoxes = unit.members[0].phases.filter((item) => item.last >= firstDay && item.first <= lastDay).map((phase) => {
           const visibleFirst = Math.max(firstDay, phase.first);
           const width = (Math.min(lastDay, phase.last) - visibleFirst + 1) * dayWidth - 2 * inset;
-          if (!unit.stack.expanded) reservedEnd = Math.max(reservedEnd, visibleFirst + (width + unit.stack.decorationOffsetPx) / dayWidth);
+          if (!unit.stack.expanded) {
+            const visualInset = stackVisualInset(width, unit.stack.decorationOffsetPx);
+            reservedEnd = Math.max(reservedEnd, visibleFirst + (width - visualInset + unit.stack.decorationOffsetPx) / dayWidth);
+          }
           return { left: (visibleFirst - firstDay) * dayWidth + inset, width };
         });
         if (unit.stack.expanded) {
@@ -175,6 +182,14 @@ export function buildTimelineLayout(projects, workspaces, firstDay, { dayWidth, 
           block.width = (Math.min(lastDay, block.last) - Math.max(firstDay, block.first) + 1) * dayWidth - 2 * inset;
           block.top = top + 11 + block.lane * TIMELINE_LANE_HEIGHT;
           if (unit.stack) {
+            block.dateLeft = block.left;
+            block.dateWidth = block.width;
+            if (!unit.stack.expanded) {
+              // Only the collapsed silhouette is inset; dates and the waiting
+              // line still use the full original work interval.
+              block.visualInsetPx = stackVisualInset(block.dateWidth, unit.stack.decorationOffsetPx);
+              block.width -= block.visualInsetPx;
+            }
             block.stackKey = unit.stack.key;
             block.stackHidden = !unit.stack.expanded && memberIndex !== 0;
             unit.stack.blocks.push(block);
